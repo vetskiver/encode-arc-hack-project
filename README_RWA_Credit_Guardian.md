@@ -1,7 +1,7 @@
 # RWA Credit Guardian — Encode × Arc Enterprise & DeFi Hackathon MVP
 Track (must match exactly): “Best Agentic Commerce Powered by Real-World Assets on Arc”
 
-Goal: Ship a clean working MVP in ~3 hours that demonstrates:
+Goal: Ship a clean working MVP that demonstrates:
 - An autonomous agent managing USDC-denominated credit backed by RWA collateral (tokenized Treasuries)
 - BORROW + REPAY + REBALANCE against RWA collateral
 - Autonomous treasury management and USDC payments
