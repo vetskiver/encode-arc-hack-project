@@ -1,7 +1,7 @@
 export interface PendingPayment {
   user: string;
   to: string;
-  amountUSDC: string; // human-readable
+  amountUSDC: string;
   createdAt: number;
 }
 
@@ -41,7 +41,14 @@ class Store {
   // Default user for MVP
   defaultUser: string = "0x0000000000000000000000000000000000000001";
 
+  // Track last ts added to prevent double-adds (agentTick + /api/oracle both call addPrice)
+  private _lastAddedTs: number = 0;
+
   addPrice(price: number, ts: number): void {
+    // Deduplicate: don't add same timestamp twice
+    if (ts === this._lastAddedTs) return;
+    this._lastAddedTs = ts;
+
     this.priceHistory.push({ price, ts });
     if (this.priceHistory.length > PRICE_HISTORY_SIZE) {
       this.priceHistory.shift();
@@ -73,6 +80,11 @@ class Store {
 
   queuePayment(payment: PendingPayment): void {
     this.pendingPayments.push(payment);
+  }
+
+  resetPriceHistory(): void {
+    this.priceHistory = [];
+    this._lastAddedTs = 0;
   }
 }
 

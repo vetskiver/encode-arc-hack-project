@@ -5,14 +5,17 @@ import { agentTick } from "./agent/agentTick";
 import * as arc from "./integrations/arc";
 import * as circle from "./integrations/circle";
 import * as stork from "./integrations/stork";
-import { parseUSDC, formatUSDC, numberToUSDC } from "./integrations/usdc";
+import { formatUSDC, numberToUSDC } from "./integrations/usdc";
 import { rationaleHash } from "./utils/hash";
+<<<<<<< HEAD
 import {
   computeCollateralValueUSDC,
   computeMaxBorrow,
   computeHealthFactor,
 } from "./utils/math";
 import { BucketName } from "./integrations/circle";
+=======
+>>>>>>> 05d5fca (Bug fixes: ignore duplicate timestamps, oracle override now clears stale history, return reasonable defaults when contract reuturns nulls, store.addPrice() removed as it was double adding when frontend polled)
 
 const router = Router();
 
@@ -60,7 +63,8 @@ router.post("/api/agent/tick", async (_req: Request, res: Response) => {
 router.get("/api/oracle", async (_req: Request, res: Response) => {
   try {
     const data = await stork.getPrice();
-    store.addPrice(data.price, data.ts);
+    // NOTE: do NOT call store.addPrice here — agentTick already does it.
+    // Calling it here too causes double-entries and inflated changePct.
     const changePct = store.getChangePct();
     res.json({
       price: data.price,
@@ -82,11 +86,10 @@ router.post("/api/collateral/register", async (req: Request, res: Response) => {
       res.status(400).json({ error: "user and amount required" });
       return;
     }
-    // amount is in human-readable units (e.g., "1000" = 1000 tokens with 18 decimals)
+    // amount readable units -> store as 18-decimal bigint on contract
     const amountBigInt = BigInt(Math.round(parseFloat(amount) * 1e18));
     const txHash = await arc.registerCollateral(user, amountBigInt);
 
-    // Update default user if needed
     store.defaultUser = user;
 
     store.addLog({
@@ -138,10 +141,12 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
     const amount = parseFloat(amountUSDC);
     const amountBigInt = numberToUSDC(amount);
 
-    // Set oracle snapshot first
-    const oracle = await stork.getPrice();
-    const priceBigInt = stork.priceToBigInt(oracle.price);
-    await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
+    // Update oracle snapshot (non-fatal)
+    try {
+      const oracle = await stork.getPrice();
+      const priceBigInt = stork.priceToBigInt(oracle.price);
+      await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
+    } catch {}
 
     // Circle transfer: CreditFacility -> Liquidity
     const result = await circle.transfer("creditFacility", "liquidity", amount);
@@ -149,13 +154,15 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
     // Record on Arc
     const arcTxHash = await arc.recordBorrow(user, amountBigInt, result.circleTxRef);
 
-    // Log decision
-    const rHash = rationaleHash(`Manual borrow of ${amountUSDC} USDC`);
-    await arc.logDecision(
-      JSON.stringify({ manual: true, amount: amountUSDC }),
-      `borrow:${amountUSDC}`,
-      rHash
-    );
+    // Log decision (non-fatal)
+    try {
+      const rHash = rationaleHash(`Manual borrow of ${amountUSDC} USDC`);
+      await arc.logDecision(
+        JSON.stringify({ manual: true, amount: amountUSDC }),
+        `borrow:${amountUSDC}`,
+        rHash
+      );
+    } catch {}
 
     store.addLog({
       ts: Date.now(),
@@ -191,13 +198,15 @@ router.post("/api/manual/repay", async (req: Request, res: Response) => {
     // Record on Arc
     const arcTxHash = await arc.recordRepay(user, amountBigInt, result.circleTxRef);
 
-    // Log decision
-    const rHash = rationaleHash(`Manual repay of ${amountUSDC} USDC`);
-    await arc.logDecision(
-      JSON.stringify({ manual: true, amount: amountUSDC }),
-      `repay:${amountUSDC}`,
-      rHash
-    );
+    // Log decision (non-fatal)
+    try {
+      const rHash = rationaleHash(`Manual repay of ${amountUSDC} USDC`);
+      await arc.logDecision(
+        JSON.stringify({ manual: true, amount: amountUSDC }),
+        `repay:${amountUSDC}`,
+        rHash
+      );
+    } catch {}
 
     store.addLog({
       ts: Date.now(),
@@ -311,7 +320,8 @@ router.get("/api/logs", (_req: Request, res: Response) => {
   res.json(store.actionLogs);
 });
 
-// POST /api/oracle/override — for demo purposes
+// POST /api/oracle/override —  demo purposes
+// *CHECK* also resets price history so changePct doesn't spike from old prices
 router.post("/api/oracle/override", (req: Request, res: Response) => {
   const { price } = req.body;
   if (typeof price !== "number" || price <= 0) {
@@ -319,7 +329,35 @@ router.post("/api/oracle/override", (req: Request, res: Response) => {
     return;
   }
   stork.setSimulatedPrice(price);
+  // Reset price history so the change is computed cleanly from this new base
+  store.resetPriceHistory();
   res.json({ overridden: true, price });
+});
+
+// POST /api/policy/set — for demo setup, sets policy on contract
+router.post("/api/policy/set", async (req: Request, res: Response) => {
+  try {
+    const {
+      ltvBps = 6000,
+      minHealthBps = 14000,
+      emergencyHealthBps = 12000,
+      liquidityMinUSDC = 500,   // dollar amount
+      perTxMaxUSDC = 10000,
+      dailyMaxUSDC = 50000,
+    } = req.body;
+
+    const txHash = await arc.setPolicy(
+      ltvBps,
+      minHealthBps,
+      emergencyHealthBps,
+      BigInt(Math.round(liquidityMinUSDC * 1e6)),
+      BigInt(Math.round(perTxMaxUSDC * 1e6)),
+      BigInt(Math.round(dailyMaxUSDC * 1e6))
+    );
+    res.json({ txHash });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;
