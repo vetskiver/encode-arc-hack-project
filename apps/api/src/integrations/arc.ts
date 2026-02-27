@@ -61,8 +61,8 @@ export function getSigner(): ethers.Wallet | null {
 }
 
 export interface ArcUserState {
-  collateralAmount: bigint;
-  debtUSDC: bigint;
+  collateralAmount: bigint;  // 18-decimal (as stored on contract)
+  debtUSDC: bigint;          // 6-decimal USDC
   dailySpent: bigint;
   dailyResetTs: bigint;
 }
@@ -71,74 +71,141 @@ export interface ArcPolicy {
   ltvBps: number;
   minHealthBps: number;
   emergencyHealthBps: number;
-  liquidityMinUSDC: bigint;
-  perTxMaxUSDC: bigint;
-  dailyMaxUSDC: bigint;
+  liquidityMinUSDC: bigint;  // 6-decimal USDC
+  perTxMaxUSDC: bigint;      // 6-decimal USDC
+  dailyMaxUSDC: bigint;      // 6-decimal USDC
 }
+
+// Simulated state for when Arc is not configured
+const simState: ArcUserState = {
+  collateralAmount: 0n,
+  debtUSDC: 0n,
+  dailySpent: 0n,
+  dailyResetTs: 0n,
+};
 
 export async function getUserState(user: string): Promise<ArcUserState> {
   if (!contract) {
-    return {
-      collateralAmount: 0n,
-      debtUSDC: 0n,
-      dailySpent: 0n,
-      dailyResetTs: 0n,
-    };
+    return { ...simState };
   }
-  const [coll, debt, spent, resetTs] = await contract.getUserState(user);
-  return {
-    collateralAmount: coll,
-    debtUSDC: debt,
-    dailySpent: spent,
-    dailyResetTs: resetTs,
-  };
+  try {
+    const [coll, debt, spent, resetTs] = await contract.getUserState(user);
+    return {
+      collateralAmount: coll,  // 18-decimal from contract
+      debtUSDC: debt,          // 6-decimal from contract
+      dailySpent: spent,
+      dailyResetTs: resetTs,
+    };
+  } catch (err: any) {
+    console.error("[Arc] getUserState error:", err.message);
+    return { ...simState };
+  }
 }
 
 export async function getPolicy(): Promise<ArcPolicy> {
   if (!contract) {
+    // defaults so agent runs without setPolicy being called
     return {
       ltvBps: 6000,
       minHealthBps: 14000,
       emergencyHealthBps: 12000,
       liquidityMinUSDC: BigInt(500 * 1e6),
-      perTxMaxUSDC: BigInt(10000 * 1e6),
-      dailyMaxUSDC: BigInt(50000 * 1e6),
+      perTxMaxUSDC: BigInt(10_000 * 1e6),
+      dailyMaxUSDC: BigInt(50_000 * 1e6),
     };
   }
-  const [ltv, minH, emergH, liqMin, perTx, daily] = await contract.getPolicy();
-  return {
-    ltvBps: Number(ltv),
-    minHealthBps: Number(minH),
-    emergencyHealthBps: Number(emergH),
-    liquidityMinUSDC: liqMin,
-    perTxMaxUSDC: perTx,
-    dailyMaxUSDC: daily,
-  };
+  try {
+    const [ltv, minH, emergH, liqMin, perTx, daily] = await contract.getPolicy();
+
+    // If policy was never set/ all 0's , return defaults so agent doesn't deadlock
+    if (Number(ltv) === 0) {
+      console.warn("[Arc] Policy not set on contract, using defaults");
+      return {
+        ltvBps: 6000,
+        minHealthBps: 14000,
+        emergencyHealthBps: 12000,
+        liquidityMinUSDC: BigInt(500 * 1e6),
+        perTxMaxUSDC: BigInt(10_000 * 1e6),
+        dailyMaxUSDC: BigInt(50_000 * 1e6),
+      };
+    }
+
+    return {
+      ltvBps: Number(ltv),
+      minHealthBps: Number(minH),
+      emergencyHealthBps: Number(emergH),
+      liquidityMinUSDC: liqMin,
+      perTxMaxUSDC: perTx,
+      dailyMaxUSDC: daily,
+    };
+  } catch (err: any) {
+    console.error("[Arc] getPolicy error:", err.message);
+    return {
+      ltvBps: 6000,
+      minHealthBps: 14000,
+      emergencyHealthBps: 12000,
+      liquidityMinUSDC: BigInt(500 * 1e6),
+      perTxMaxUSDC: BigInt(10_000 * 1e6),
+      dailyMaxUSDC: BigInt(50_000 * 1e6),
+    };
+  }
 }
 
 export async function setOracleSnapshot(price: bigint, ts: number): Promise<string> {
   if (!contract) return "sim-oracle-snapshot";
-  const tx = await contract.setOracleSnapshot(price, ts);
+  try {
+    const tx = await contract.setOracleSnapshot(price, ts);
+    const receipt = await tx.wait();
+    return receipt.hash;
+  } catch (err: any) {
+    console.warn("[Arc] setOracleSnapshot failed:", err.message);
+    return "sim-oracle-snapshot";
+  }
+}
+
+export async function setPolicy(
+  ltvBps: number,
+  minHealthBps: number,
+  emergencyHealthBps: number,
+  liquidityMinUSDC: bigint,
+  perTxMaxUSDC: bigint,
+  dailyMaxUSDC: bigint
+): Promise<string> {
+  if (!contract) return "sim-setpolicy-" + Date.now();
+  const tx = await contract.setPolicy(
+    ltvBps, minHealthBps, emergencyHealthBps,
+    liquidityMinUSDC, perTxMaxUSDC, dailyMaxUSDC
+  );
   const receipt = await tx.wait();
   return receipt.hash;
 }
 
 export async function registerCollateral(user: string, amount: bigint): Promise<string> {
-  if (!contract) return "sim-register-" + Date.now();
+  if (!contract) {
+    // Update sim state so getUserState reflects the registration
+    simState.collateralAmount += amount;
+    return "sim-register-" + Date.now();
+  }
   const tx = await contract.registerCollateral(user, amount);
   const receipt = await tx.wait();
   return receipt.hash;
 }
 
 export async function recordBorrow(user: string, amount: bigint, circleTxRef: string): Promise<string> {
-  if (!contract) return "sim-borrow-" + Date.now();
+  if (!contract) {
+    simState.debtUSDC += amount;
+    return "sim-borrow-" + Date.now();
+  }
   const tx = await contract.recordBorrow(user, amount, circleTxRef);
   const receipt = await tx.wait();
   return receipt.hash;
 }
 
 export async function recordRepay(user: string, amount: bigint, circleTxRef: string): Promise<string> {
-  if (!contract) return "sim-repay-" + Date.now();
+  if (!contract) {
+    simState.debtUSDC = simState.debtUSDC > amount ? simState.debtUSDC - amount : 0n;
+    return "sim-repay-" + Date.now();
+  }
   const tx = await contract.recordRepay(user, amount, circleTxRef);
   const receipt = await tx.wait();
   return receipt.hash;
@@ -174,6 +241,7 @@ export async function logDecision(
   rationaleHashBytes: string
 ): Promise<string> {
   if (!contract) return "sim-log-" + Date.now();
+<<<<<<< HEAD
   const tx = await contract.logDecision(snapshot, action, rationaleHashBytes);
   const receipt = await tx.wait();
   return receipt.hash;
@@ -185,3 +253,14 @@ export async function resetUser(user: string): Promise<string> {
   const receipt = await tx.wait();
   return receipt.hash;
 }
+=======
+  try {
+    const tx = await contract.logDecision(snapshot, action, rationaleHashBytes);
+    const receipt = await tx.wait();
+    return receipt.hash;
+  } catch (err: any) {
+    console.warn("[Arc] logDecision failed:", err.message);
+    return "sim-log-" + Date.now();
+  }
+}
+>>>>>>> 05d5fca (Bug fixes: ignore duplicate timestamps, oracle override now clears stale history, return reasonable defaults when contract reuturns nulls, store.addPrice() removed as it was double adding when frontend polled)
