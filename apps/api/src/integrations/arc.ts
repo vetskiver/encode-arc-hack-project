@@ -235,13 +235,6 @@ export async function recordPayment(
   return receipt.hash;
 }
 
-export async function resetUser(user: string): Promise<string> {
-  if (!contract) return "sim-reset-" + Date.now();
-  const tx = await contract.resetUser(user);
-  const receipt = await tx.wait();
-  return receipt.hash;
-}
-
 export async function logDecision(
   snapshot: string,
   action: string,
@@ -256,4 +249,15 @@ export async function logDecision(
     console.warn("[Arc] logDecision failed:", err.message);
     return "sim-log-" + Date.now();
   }
+}
+
+export async function resetUser(user: string): Promise<string> {
+  if (!contract) {
+    simState.collateralAmount = 0n;
+    simState.debtUSDC = 0n;
+    return "sim-reset-" + Date.now();
+  }
+  const tx = await contract.resetUser(user);
+  const receipt = await tx.wait();
+  return receipt.hash;
 }
