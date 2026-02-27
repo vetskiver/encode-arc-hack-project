@@ -9,6 +9,7 @@ const GUARDIAN_VAULT_ABI = [
   "function recordRebalance(string fromBucket, string toBucket, uint256 amount, string circleTxRef)",
   "function recordPayment(address user, address to, uint256 amount, string circleTxRef)",
   "function logDecision(string snapshot, string action, bytes32 rationaleHash)",
+  "function resetUser(address user)",
   "function getUserState(address user) view returns (uint256, uint256, uint256, uint256)",
   "function getPolicy() view returns (uint256, uint256, uint256, uint256, uint256, uint256)",
   "function collateralAmount(address) view returns (uint256)",
@@ -28,6 +29,7 @@ const GUARDIAN_VAULT_ABI = [
   "event RebalanceRecorded(string fromBucket, string toBucket, uint256 amount, string circleTxRef)",
   "event PaymentRecorded(address indexed user, address indexed to, uint256 amount, string circleTxRef)",
   "event AgentDecisionLogged(string snapshot, string action, bytes32 rationaleHash)",
+  "event UserReset(address indexed user)",
 ];
 
 let provider: ethers.JsonRpcProvider | null = null;
@@ -173,6 +175,13 @@ export async function logDecision(
 ): Promise<string> {
   if (!contract) return "sim-log-" + Date.now();
   const tx = await contract.logDecision(snapshot, action, rationaleHashBytes);
+  const receipt = await tx.wait();
+  return receipt.hash;
+}
+
+export async function resetUser(user: string): Promise<string> {
+  if (!contract) return "sim-reset-" + Date.now();
+  const tx = await contract.resetUser(user);
   const receipt = await tx.wait();
   return receipt.hash;
 }

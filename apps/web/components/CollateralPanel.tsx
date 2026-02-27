@@ -7,6 +7,7 @@ import {
   stopAgent,
   triggerTick,
   overrideOraclePrice,
+  resetUser,
 } from "../lib/api";
 
 interface Props {
@@ -24,19 +25,21 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
   const wrap = async (fn: () => Promise<any>, label: string) => {
     setMsg("");
     try {
-      const res = await fn();
+      await fn();
       setMsg(`${label}: OK`);
+      return true;
     } catch (err: any) {
       setMsg(`${label}: ${err.message}`);
+      return false;
     }
   };
 
   return (
-    <div style={styles.card}>
-      <h3 style={styles.heading}>Actions</h3>
+    <div style={{ ...styles.card, animationDelay: "0.12s" }}>
+      <h3 style={styles.heading}>Treasury Actions</h3>
 
       <div style={styles.section}>
-        <span style={styles.label}>Register Collateral</span>
+        <span style={styles.label}>Register RWA Collateral</span>
         <div style={styles.row}>
           <input
             style={styles.input}
@@ -46,12 +49,13 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
           />
           <button
             style={styles.btn}
-            onClick={() =>
-              wrap(
+            onClick={async () => {
+              const ok = await wrap(
                 () => registerCollateral(defaultUser, collAmount),
                 "Register"
-              )
-            }
+              );
+              if (ok) setCollAmount("");
+            }}
           >
             Register
           </button>
@@ -59,21 +63,22 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
       </div>
 
       <div style={styles.section}>
-        <span style={styles.label}>Manual Borrow / Repay</span>
+        <span style={styles.label}>Credit Line Draw / Repay</span>
         <div style={styles.row}>
           <input
             style={styles.input}
-            placeholder="Borrow USDC"
+            placeholder="Draw USDC"
             value={borrowAmt}
             onChange={(e) => setBorrowAmt(e.target.value)}
           />
           <button
             style={styles.btnSecondary}
-            onClick={() =>
-              wrap(() => manualBorrow(defaultUser, borrowAmt), "Borrow")
-            }
+            onClick={async () => {
+              const ok = await wrap(() => manualBorrow(defaultUser, borrowAmt), "Draw");
+              if (ok) setBorrowAmt("");
+            }}
           >
-            Borrow
+            Draw
           </button>
           <input
             style={styles.input}
@@ -83,9 +88,10 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
           />
           <button
             style={styles.btnSecondary}
-            onClick={() =>
-              wrap(() => manualRepay(defaultUser, repayAmt), "Repay")
-            }
+            onClick={async () => {
+              const ok = await wrap(() => manualRepay(defaultUser, repayAmt), "Repay");
+              if (ok) setRepayAmt("");
+            }}
           >
             Repay
           </button>
@@ -93,7 +99,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
       </div>
 
       <div style={styles.section}>
-        <span style={styles.label}>Agent Controls</span>
+        <span style={styles.label}>Autopilot Controls</span>
         <div style={styles.row}>
           <button
             style={agentEnabled ? styles.btnDanger : styles.btn}
@@ -104,19 +110,19 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
               )
             }
           >
-            {agentEnabled ? "Stop Agent" : "Start Agent"}
+            {agentEnabled ? "Stop Autopilot" : "Start Autopilot"}
           </button>
           <button
             style={styles.btnSecondary}
             onClick={() => wrap(triggerTick, "Tick")}
           >
-            Run Agent Now
+            Run Check Now
           </button>
         </div>
       </div>
 
       <div style={styles.section}>
-        <span style={styles.label}>Oracle Override (Demo)</span>
+        <span style={styles.label}>Price Override (Demo)</span>
         <div style={styles.row}>
           <input
             style={styles.input}
@@ -126,14 +132,33 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
           />
           <button
             style={styles.btnSecondary}
-            onClick={() =>
-              wrap(
+            onClick={async () => {
+              const ok = await wrap(
                 () => overrideOraclePrice(parseFloat(oracleOverride)),
                 "Override"
-              )
-            }
+              );
+              if (ok) setOracleOverride("");
+            }}
           >
             Override
+          </button>
+        </div>
+      </div>
+
+      <div style={styles.section}>
+        <span style={styles.label}>Reset Account (Demo)</span>
+        <div style={styles.row}>
+          <button
+            style={styles.btnDanger}
+            onClick={() => {
+              if (!window.confirm("Reset on-chain user state?")) {
+                setMsg("Reset cancelled");
+                return;
+              }
+              wrap(() => resetUser(defaultUser), "Reset");
+            }}
+          >
+            Reset Account State
           </button>
         </div>
       </div>
@@ -145,25 +170,31 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
-    backgroundColor: "#1e1e2e",
-    borderRadius: 8,
+    background: "var(--card)",
+    borderRadius: 14,
     padding: 20,
-    color: "#fff",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    boxShadow: "var(--shadow)",
+    backdropFilter: "blur(6px)",
+    animation: "fadeUp 0.6s ease both",
   },
   heading: {
     margin: "0 0 16px 0",
     fontSize: 16,
-    fontWeight: 600,
+    fontWeight: 700,
+    letterSpacing: 0.2,
   },
   section: {
     marginBottom: 14,
   },
   label: {
     fontSize: 12,
-    color: "#888",
+    color: "var(--muted)",
     textTransform: "uppercase" as const,
     display: "block",
     marginBottom: 6,
+    letterSpacing: 0.8,
   },
   row: {
     display: "flex",
@@ -174,45 +205,47 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 120,
     padding: "8px 12px",
-    borderRadius: 6,
-    border: "1px solid #444",
-    backgroundColor: "#2a2a3e",
-    color: "#fff",
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--surface)",
+    color: "var(--text)",
     fontSize: 14,
+    outline: "none",
   },
   btn: {
     padding: "8px 16px",
-    borderRadius: 6,
-    border: "none",
-    backgroundColor: "#3b82f6",
-    color: "#fff",
-    fontWeight: 600,
+    borderRadius: 10,
+    border: "1px solid transparent",
+    background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)",
+    color: "#061018",
+    fontWeight: 700,
     cursor: "pointer",
     fontSize: 13,
+    boxShadow: "0 6px 16px rgba(2, 132, 199, 0.25)",
   },
   btnSecondary: {
     padding: "8px 16px",
-    borderRadius: 6,
-    border: "1px solid #555",
-    backgroundColor: "#2a2a3e",
-    color: "#fff",
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--surface)",
+    color: "var(--text)",
     fontWeight: 600,
     cursor: "pointer",
     fontSize: 13,
   },
   btnDanger: {
     padding: "8px 16px",
-    borderRadius: 6,
-    border: "none",
-    backgroundColor: "#ef4444",
-    color: "#fff",
-    fontWeight: 600,
+    borderRadius: 10,
+    border: "1px solid rgba(244, 63, 94, 0.5)",
+    backgroundColor: "rgba(244, 63, 94, 0.15)",
+    color: "#fecdd3",
+    fontWeight: 700,
     cursor: "pointer",
     fontSize: 13,
   },
   msg: {
     marginTop: 10,
     fontSize: 13,
-    color: "#aaa",
+    color: "var(--muted)",
   },
 };

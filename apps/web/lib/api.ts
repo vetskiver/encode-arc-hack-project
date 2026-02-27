@@ -70,3 +70,10 @@ export function overrideOraclePrice(price: number) {
     body: JSON.stringify({ price }),
   });
 }
+
+export function resetUser(user: string) {
+  return fetchJSON<any>("/api/user/reset", {
+    method: "POST",
+    body: JSON.stringify({ user }),
+  });
+}

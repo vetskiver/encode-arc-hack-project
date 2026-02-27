@@ -22,14 +22,14 @@ export default function HeaderStatusBar({ status }: Props) {
 
   const statusColor =
     status?.status === "Risk Mode"
-      ? "#ef4444"
+      ? "var(--danger)"
       : status?.status === "Executing"
-      ? "#f59e0b"
-      : "#22c55e";
+      ? "var(--warning)"
+      : "var(--success)";
 
   return (
     <div style={styles.bar}>
-      <div style={styles.title}>RWA Credit Guardian</div>
+      <div style={styles.title}>Treasury Credit Guardian</div>
       <div style={styles.statusGroup}>
         <div
           style={{
@@ -54,13 +54,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 16,
     padding: "12px 20px",
-    backgroundColor: "#1e1e2e",
-    color: "#fff",
-    borderBottom: "1px solid #333",
+    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    color: "var(--text)",
+    borderBottom: "1px solid var(--border)",
+    backdropFilter: "blur(8px)",
+    boxShadow: "0 10px 30px rgba(2, 6, 23, 0.35)",
   },
   title: {
     fontSize: 18,
     fontWeight: 700,
+    letterSpacing: 0.4,
   },
   statusGroup: {
     display: "flex",
@@ -72,17 +75,17 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "#061018",
   },
   countdown: {
     fontSize: 13,
-    color: "#aaa",
+    color: "var(--muted)",
   },
   reason: {
     flex: 1,
     textAlign: "right" as const,
     fontSize: 13,
-    color: "#aaa",
+    color: "var(--muted)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,

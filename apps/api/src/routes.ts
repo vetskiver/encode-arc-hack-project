@@ -213,6 +213,33 @@ router.post("/api/manual/repay", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/user/reset
+router.post("/api/user/reset", async (req: Request, res: Response) => {
+  try {
+    const { user } = req.body;
+    if (!user) {
+      res.status(400).json({ error: "user required" });
+      return;
+    }
+
+    const arcTxHash = await arc.resetUser(user);
+
+    store.addLog({
+      ts: Date.now(),
+      action: "resetUser",
+      amountUSDC: "0",
+      healthFactor: 0,
+      rationale: `Reset user state for ${user}`,
+      circleTxRef: "",
+      arcTxHash,
+    });
+
+    res.json({ arcTxHash });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/logs
 router.get("/api/logs", (_req: Request, res: Response) => {
   res.json(store.actionLogs);
