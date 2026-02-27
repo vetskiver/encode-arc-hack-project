@@ -10,17 +10,17 @@ export interface Snapshot {
   debtUSDC: bigint;
   maxBorrowUSDC: bigint;
   healthFactor: number;
-  liquidityUSDC: number;
-  reserveUSDC: number;
+  liquidityUSDC: number;   // plain dollar float from Circle
+  reserveUSDC: number;     // plain dollar float from Circle
   yieldUSDC: number;
   pendingPayment: { to: string; amountUSDC: number } | null;
   policy: {
     ltvBps: number;
     minHealthBps: number;
     emergencyHealthBps: number;
-    liquidityMinUSDC: number;
-    perTxMaxUSDC: number;
-    dailyMaxUSDC: number;
+    liquidityMinUSDC: number;   // 6-decimal raw (normalized by agentTick)
+    perTxMaxUSDC: number;       // 6-decimal raw
+    dailyMaxUSDC: number;       // 6-decimal raw
   };
 }
 
@@ -28,7 +28,7 @@ export type ActionType = "borrow" | "repay" | "rebalance" | "payment";
 
 export interface PlannedAction {
   type: ActionType;
-  amountUSDC: number;
+  amountUSDC: number;  // dollar float
   from?: string;
   to?: string;
   rationale: string;
@@ -53,29 +53,34 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
   const emergencyHealth = bpsToRatio(snapshot.policy.emergencyHealthBps);
   const hf = snapshot.healthFactor;
   const changePctAbs = Math.abs(snapshot.changePct);
+
+  // Convert 6-decimal policy values to dollar floats for comparison
   const perTxMax = snapshot.policy.perTxMaxUSDC / 1e6;
-  const dailyMax = snapshot.policy.dailyMaxUSDC / 1e6;
   const liquidityMin = snapshot.policy.liquidityMinUSDC / 1e6;
 
   const isVolatile = changePctAbs > VOL_THRESHOLD;
   const isRiskMode = hf < minHealth || isVolatile;
 
-  // Rule 2: Emergency — force repay to target
+  // Rule 2: Emergency — override plan with forced repay
   if (hf < emergencyHealth && Number(snapshot.debtUSDC) > 0) {
     const targetHealth = minHealth + 0.10;
     const maxBorrow = Number(snapshot.maxBorrowUSDC) / 1e6;
     const debt = Number(snapshot.debtUSDC) / 1e6;
-    const repayAmount = Math.max(0, debt - maxBorrow / targetHealth);
+    const repayAmount = Math.min(
+      Math.max(0, debt - maxBorrow / targetHealth),
+      debt
+    );
 
-    if (repayAmount > 0) {
+    if (repayAmount > 0.01) {
+      console.log(`[Safety] Emergency repay triggered: HF=${hf.toFixed(2)}, repay=${repayAmount.toFixed(2)}`);
       return {
         allowed: true,
         plan: {
           actions: [
             {
               type: "repay",
-              amountUSDC: Math.min(repayAmount, debt),
-              rationale: `Emergency repay: HF=${hf.toFixed(2)} < emergency=${emergencyHealth.toFixed(2)}. Repaying to restore target HF=${targetHealth.toFixed(2)}.`,
+              amountUSDC: repayAmount,
+              rationale: `Emergency repay: HF=${hf.toFixed(2)} < emergency=${emergencyHealth.toFixed(2)}. Repaying ${repayAmount.toFixed(2)} to restore target HF=${targetHealth.toFixed(2)}.`,
             },
           ],
           rationale: `Emergency: HF critically low at ${hf.toFixed(2)}`,
@@ -88,66 +93,87 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
 
   // Rule 1: Block debt-increasing actions if HF < minHealth
   if (hf < minHealth) {
-    const filtered = proposal.actions.filter((a) => {
-      if (a.type === "borrow" || a.type === "payment") return false;
-      return true; // allow repay and rebalance
-    });
+    const repayActions = proposal.actions.filter(
+      (a) => a.type === "repay" || a.type === "rebalance"
+    );
 
-    if (filtered.length === 0) {
+    if (repayActions.length === 0) {
       return {
         allowed: false,
-        plan: { actions: [], rationale: "Blocked: HF below minHealth, only repay allowed" },
-        reason: `Blocked: HF=${hf.toFixed(2)} < minHealth=${minHealth.toFixed(2)}`,
+        plan: { actions: [], rationale: "Blocked: HF below minHealth" },
+        reason: `Blocked: HF=${hf.toFixed(2)} < minHealth=${minHealth.toFixed(2)}. Only repay allowed.`,
         riskMode: true,
       };
     }
 
     return {
       allowed: true,
-      plan: { actions: filtered, rationale: proposal.rationale + " (debt-increasing actions removed by safety)" },
-      reason: `Actions filtered: HF=${hf.toFixed(2)} < minHealth`,
+      plan: {
+        actions: repayActions,
+        rationale: proposal.rationale + " (borrow/payment removed by safety controller)",
+      },
+      reason: `Filtered to repay-only: HF=${hf.toFixed(2)} < minHealth=${minHealth.toFixed(2)}`,
       riskMode: true,
     };
   }
 
-  // Validate each action
+  // Validate each proposed action
   const validatedActions: PlannedAction[] = [];
   for (const action of proposal.actions) {
-    // Rule 5: Spending caps
-    if (action.amountUSDC > perTxMax) {
-      action.amountUSDC = perTxMax;
-      action.rationale += ` (capped to perTxMax=${perTxMax})`;
+    let a = { ...action };
+
+    // Rule 5: Per-tx spending cap (dollar comparison)
+    if (perTxMax > 0 && a.amountUSDC > perTxMax) {
+      a.amountUSDC = perTxMax;
+      a.rationale += ` (capped to perTxMax=$${perTxMax.toFixed(2)})`;
     }
 
     // Rule 3: LTV check for borrows
-    if (action.type === "borrow") {
+    if (a.type === "borrow") {
       const currentDebt = Number(snapshot.debtUSDC) / 1e6;
       const maxBorrow = Number(snapshot.maxBorrowUSDC) / 1e6;
-      if (currentDebt + action.amountUSDC > maxBorrow) {
-        const safeAmount = Math.max(0, maxBorrow - currentDebt);
-        if (safeAmount <= 0) continue;
-        action.amountUSDC = safeAmount;
-        action.rationale += ` (reduced to stay within LTV)`;
+      const maxAllowed = maxBorrow - currentDebt;
+      if (maxAllowed <= 0.01) {
+        console.log(`[Safety] Borrow blocked: at max LTV (debt=${currentDebt.toFixed(2)}, maxBorrow=${maxBorrow.toFixed(2)})`);
+        continue;
+      }
+      if (currentDebt + a.amountUSDC > maxBorrow) {
+        a.amountUSDC = maxAllowed;
+        a.rationale += ` (reduced to $${maxAllowed.toFixed(2)} to stay within LTV)`;
       }
     }
 
-    // Rule 4: Liquidity minimum check
-    if (action.type === "payment" || (action.type === "rebalance" && action.from === "liquidity")) {
-      const remainingLiquidity = snapshot.liquidityUSDC - action.amountUSDC;
-      if (remainingLiquidity < liquidityMin && action.type !== "payment") {
-        continue; // skip this rebalance
+    // Rule 4: Liquidity minimum — don't let rebalances-out drop below floor
+    if (a.type === "rebalance" && a.from === "liquidity") {
+      const afterBalance = snapshot.liquidityUSDC - a.amountUSDC;
+      if (afterBalance < liquidityMin) {
+        console.log(`[Safety] Rebalance from liquidity blocked: would drop below min`);
+        continue;
       }
     }
 
-    validatedActions.push(action);
+    // Skip zero/dust amounts
+    if (a.amountUSDC < 0.01) {
+      console.log(`[Safety] Skipping dust action: ${a.type} ${a.amountUSDC}`);
+      continue;
+    }
+
+    validatedActions.push(a);
   }
 
+  // allowed = true if there were no proposed actions (nothing to do = healthy)
+  //         OR if at least some actions passed validation
+  const nothingProposed = proposal.actions.length === 0;
+  const someActionsApproved = validatedActions.length > 0;
+
   return {
-    allowed: validatedActions.length > 0 || proposal.actions.length === 0,
+    allowed: nothingProposed || someActionsApproved,
     plan: { actions: validatedActions, rationale: proposal.rationale },
     reason: isRiskMode
       ? `Risk Mode: HF=${hf.toFixed(2)}, vol=${changePctAbs.toFixed(1)}%`
-      : `Allowed: ${validatedActions.length} actions`,
+      : nothingProposed
+        ? "All healthy, no actions needed"
+        : `Approved ${validatedActions.length} of ${proposal.actions.length} actions`,
     riskMode: isRiskMode,
   };
 }
