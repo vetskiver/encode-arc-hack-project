@@ -136,6 +136,50 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column" as const,
     gap: 16,
     minWidth: 280,
+<<<<<<< HEAD
+  },
+  card: {
+    background: "var(--card)",
+    borderRadius: 14,
+    padding: 20,
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    boxShadow: "var(--shadow)",
+    backdropFilter: "blur(6px)",
+    animation: "fadeUp 0.6s ease both",
+  },
+  cardHeading: {
+    margin: "0 0 12px 0",
+    fontSize: 16,
+    fontWeight: 700,
+    letterSpacing: 0.2,
+  },
+  label: {
+    fontSize: 12,
+    color: "var(--muted)",
+    textTransform: "uppercase" as const,
+    display: "block",
+    marginBottom: 6,
+    letterSpacing: 0.8,
+  },
+  select: {
+    width: "100%",
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--surface)",
+    color: "var(--text)",
+    marginBottom: 12,
+  },
+  input: {
+    width: "100%",
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--surface)",
+    color: "var(--text)",
+=======
+>>>>>>> d941ad2 (Updated front end, add reset function to arc.ts)
   },
   card: {
     background: "var(--card)",
