@@ -21,6 +21,10 @@ pnpm-debug.log*
 .DS_Store
 .vscode/
 
+dev-controlled-projects/node_modules/
+dev-controlled-projects/output/
+dev-controlled-projects/.env
+
 hardhat/cache/
 hardhat/artifacts/
 typechain-types/
