@@ -10,13 +10,15 @@ import {
   overrideOraclePrice,
   resetUser,
 } from "../lib/api";
+import { Snapshot } from "../lib/types";
 
 interface Props {
   defaultUser: string;
   agentEnabled: boolean;
+  snapshot?: Snapshot | null;
 }
 
-export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
+export default function CollateralPanel({ defaultUser, agentEnabled, snapshot }: Props) {
   const [collAmount, setCollAmount] = useState("");
   const [borrowAmt, setBorrowAmt] = useState("");
   const [repayAmt, setRepayAmt] = useState("");
@@ -36,10 +38,27 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
     }
   };
 
+  // Collateral value preview
+  const oraclePrice = snapshot?.oraclePrice ?? null;
+  const collAmountNum = parseFloat(collAmount);
+  const previewValueUSDC =
+    oraclePrice && !isNaN(collAmountNum) && collAmountNum > 0
+      ? collAmountNum * oraclePrice
+      : null;
+
+  // LTV preview (defaults match arc.ts: ltvBps=6000 → 60%)
+  const ltvRatio = 0.6;
+  const previewMaxBorrow =
+    previewValueUSDC != null ? previewValueUSDC * ltvRatio : null;
+
+  const fmt = (n: number) =>
+    n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
   return (
     <div style={{ ...styles.card, animationDelay: "0.12s" }}>
       <h3 style={styles.heading}>Treasury Actions</h3>
 
+      {/* ── Register Collateral ── */}
       <div style={styles.section}>
         <span style={styles.label}>Register RWA Collateral</span>
         <div style={styles.row}>
@@ -62,8 +81,37 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
             Register
           </button>
         </div>
+
+        {/* Value preview */}
+        {previewValueUSDC != null ? (
+          <div style={styles.preview}>
+            <div style={styles.previewRow}>
+              <span style={styles.previewLabel}>Collateral value</span>
+              <span style={styles.previewValue}>${fmt(previewValueUSDC)}</span>
+            </div>
+            <div style={styles.previewRow}>
+              <span style={styles.previewLabel}>Max borrow @ 60% LTV</span>
+              <span style={{ ...styles.previewValue, color: "var(--success)" }}>
+                ${fmt(previewMaxBorrow!)}
+              </span>
+            </div>
+            {oraclePrice && (
+              <div style={styles.previewSource}>
+                @ ${fmt(oraclePrice)} oracle price
+                {snapshot?.oracleSource === "stork" ? " · Stork" : " · Simulated"}
+              </div>
+            )}
+          </div>
+        ) : (
+          oraclePrice && (
+            <div style={styles.previewHint}>
+              Enter units to see USDC value at ${fmt(oraclePrice)}
+            </div>
+          )
+        )}
       </div>
 
+      {/* ── Credit Line ── */}
       <div style={styles.section}>
         <span style={styles.label}>Credit Line Draw / Repay</span>
         <div style={styles.row}>
@@ -100,6 +148,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
         </div>
       </div>
 
+      {/* ── Yield Rebalance ── */}
       <div style={styles.section}>
         <span style={styles.label}>Yield Rebalance (Manual)</span>
         <div style={styles.row}>
@@ -136,6 +185,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
         </div>
       </div>
 
+      {/* ── Autopilot ── */}
       <div style={styles.section}>
         <span style={styles.label}>Autopilot Controls</span>
         <div style={styles.row}>
@@ -159,6 +209,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
         </div>
       </div>
 
+      {/* ── Price Override ── */}
       <div style={styles.section}>
         <span style={styles.label}>Price Override (Demo)</span>
         <div style={styles.row}>
@@ -183,6 +234,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
         </div>
       </div>
 
+      {/* ── Reset ── */}
       <div style={styles.section}>
         <span style={styles.label}>Reset Account (Demo)</span>
         <div style={styles.row}>
@@ -201,7 +253,14 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
         </div>
       </div>
 
-      {msg && <div style={styles.msg}>{msg}</div>}
+      {msg && (
+        <div style={{
+          ...styles.msg,
+          color: msg.includes("OK") ? "var(--success)" : "var(--danger)",
+        }}>
+          {msg}
+        </div>
+      )}
     </div>
   );
 }
@@ -281,9 +340,44 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 13,
   },
+  preview: {
+    marginTop: 8,
+    padding: "10px 12px",
+    backgroundColor: "rgba(16, 185, 129, 0.07)",
+    border: "1px solid rgba(16, 185, 129, 0.2)",
+    borderRadius: 10,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+  },
+  previewRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  previewLabel: {
+    fontSize: 12,
+    color: "var(--muted)",
+  },
+  previewValue: {
+    fontSize: 13,
+    fontWeight: 700,
+    fontVariantNumeric: "tabular-nums",
+  },
+  previewSource: {
+    fontSize: 11,
+    color: "var(--muted)",
+    marginTop: 2,
+    opacity: 0.7,
+  },
+  previewHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "var(--muted)",
+    fontStyle: "italic",
+  },
   msg: {
     marginTop: 10,
     fontSize: 13,
-    color: "var(--muted)",
   },
 };
