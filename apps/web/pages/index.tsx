@@ -93,6 +93,7 @@ export default function Home() {
           <CollateralPanel
             defaultUser={companyAddress}
             agentEnabled={status?.agentEnabled || false}
+            snapshot={status?.snapshot || null}
           />
           <PaymentRequestForm defaultUser={companyAddress} />
         </div>

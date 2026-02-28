@@ -6,12 +6,12 @@ contract GuardianVault {
     address public agent;
 
     // --- Policy parameters ---
-    uint256 public ltvBps;            // e.g. 6000 = 60%
-    uint256 public minHealthBps;      // e.g. 14000 = 1.40
-    uint256 public emergencyHealthBps;// e.g. 12000 = 1.20
-    uint256 public liquidityMinUSDC;  // 6 decimals
-    uint256 public perTxMaxUSDC;      // 6 decimals
-    uint256 public dailyMaxUSDC;      // 6 decimals
+    uint256 public ltvBps;             // e.g. 6000 = 60%
+    uint256 public minHealthBps;       // e.g. 14000 = 1.40
+    uint256 public emergencyHealthBps; // e.g. 12000 = 1.20
+    uint256 public liquidityMinUSDC;   // 6 decimals
+    uint256 public perTxMaxUSDC;       // 6 decimals
+    uint256 public dailyMaxUSDC;       // 6 decimals
 
     // --- Per-user state ---
     mapping(address => uint256) public collateralAmount;
@@ -22,7 +22,7 @@ contract GuardianVault {
     mapping(address => uint256) public dailyResetTs;
 
     // --- Latest oracle snapshot (set by agent before borrow) ---
-    uint256 public lastOraclePrice;   // 18 decimals
+    uint256 public lastOraclePrice; // 18 decimals
     uint256 public lastOracleTs;
 
     // --- Events ---
@@ -52,6 +52,11 @@ contract GuardianVault {
         _;
     }
 
+    modifier onlyOwnerOrAgent() {
+        require(msg.sender == owner || msg.sender == agent, "Not owner or agent");
+        _;
+    }
+
     constructor(address _agent) {
         owner = msg.sender;
         agent = _agent;
@@ -64,6 +69,29 @@ contract GuardianVault {
         dailyMaxUSDC = 50000 * 1e6;     // 50,000 USDC
     }
 
+    // --- Admin ---
+
+    function setAgent(address _agent) external onlyOwner {
+        require(_agent != address(0), "Invalid agent");
+        emit AgentUpdated(agent, _agent);
+        agent = _agent;
+    }
+
+    /**
+     * @notice Reset a user's collateral, debt, and spending state to zero.
+     * Callable by owner OR agent so the backend can call it via API for demo resets.
+     * Emits UserReset for audit trail.
+     */
+    function resetUser(address user) external onlyOwnerOrAgent {
+        collateralAmount[user] = 0;
+        debtUSDC[user] = 0;
+        dailySpent[user] = 0;
+        dailyResetTs[user] = 0;
+        emit UserReset(user);
+    }
+
+    // --- Policy ---
+
     function setPolicy(
         uint256 _ltvBps,
         uint256 _minHealthBps,
@@ -74,15 +102,23 @@ contract GuardianVault {
     ) external onlyOwner {
         require(_ltvBps > 0 && _ltvBps <= 10000, "Invalid LTV");
         require(_minHealthBps > 10000, "minHealth must be > 1.0");
-        require(_emergencyHealthBps > 10000 && _emergencyHealthBps < _minHealthBps, "Invalid emergencyHealth");
+        require(
+            _emergencyHealthBps > 10000 && _emergencyHealthBps < _minHealthBps,
+            "Invalid emergencyHealth"
+        );
         ltvBps = _ltvBps;
         minHealthBps = _minHealthBps;
         emergencyHealthBps = _emergencyHealthBps;
         liquidityMinUSDC = _liquidityMinUSDC;
         perTxMaxUSDC = _perTxMaxUSDC;
         dailyMaxUSDC = _dailyMaxUSDC;
-        emit PolicySet(_ltvBps, _minHealthBps, _emergencyHealthBps, _liquidityMinUSDC, _perTxMaxUSDC, _dailyMaxUSDC);
+        emit PolicySet(
+            _ltvBps, _minHealthBps, _emergencyHealthBps,
+            _liquidityMinUSDC, _perTxMaxUSDC, _dailyMaxUSDC
+        );
     }
+
+    // --- Agent actions ---
 
     function setOracleSnapshot(uint256 price, uint256 ts) external onlyAgent {
         require(price > 0, "Price must be > 0");
@@ -96,16 +132,17 @@ contract GuardianVault {
         emit CollateralRegistered(user, amount, collateralAmount[user]);
     }
 
-    function recordBorrow(address user, uint256 amount, string calldata circleTxRef) external onlyAgent {
+    function recordBorrow(
+        address user,
+        uint256 amount,
+        string calldata circleTxRef
+    ) external onlyAgent {
         require(amount > 0, "Amount must be > 0");
         require(lastOraclePrice > 0, "No oracle snapshot");
 
         uint256 newDebt = debtUSDC[user] + amount;
 
-        // LTV check: newDebt <= collateralAmount * oraclePrice * ltvBps / 10000
-        // collateralAmount is in 18 decimals, oraclePrice is in 18 decimals, debt is 6 decimals
-        // collateralValueUSDC (6 dec) = collateralAmount * oraclePrice / 1e18 / 1e12
-        // simplification: collateralAmount(18) * oraclePrice(18) / 1e30 = collateralValueUSDC(6)
+        // collateralValueUSDC (6 dec) = collateralAmount(18) * oraclePrice(18) / 1e30
         uint256 collateralValueUSDC = (collateralAmount[user] * lastOraclePrice) / 1e30;
         uint256 maxBorrow = (collateralValueUSDC * ltvBps) / 10000;
         require(newDebt <= maxBorrow, "Exceeds LTV max borrow");
@@ -114,7 +151,11 @@ contract GuardianVault {
         emit BorrowRecorded(user, amount, circleTxRef, newDebt);
     }
 
-    function recordRepay(address user, uint256 amount, string calldata circleTxRef) external onlyAgent {
+    function recordRepay(
+        address user,
+        uint256 amount,
+        string calldata circleTxRef
+    ) external onlyAgent {
         require(amount > 0, "Amount must be > 0");
         require(amount <= debtUSDC[user], "Repay exceeds debt");
         debtUSDC[user] -= amount;
@@ -169,18 +210,37 @@ contract GuardianVault {
     }
 
     // --- View helpers ---
-    function getUserState(address user) external view returns (
-        uint256 _collateral,
-        uint256 _debt,
-        uint256 _dailySpent,
-        uint256 _dailyResetTs
-    ) {
-        return (collateralAmount[user], debtUSDC[user], dailySpent[user], dailyResetTs[user]);
+
+    function getUserState(address user)
+        external
+        view
+        returns (
+            uint256 _collateral,
+            uint256 _debt,
+            uint256 _dailySpent,
+            uint256 _dailyResetTs
+        )
+    {
+        return (
+            collateralAmount[user],
+            debtUSDC[user],
+            dailySpent[user],
+            dailyResetTs[user]
+        );
     }
 
-    function getPolicy() external view returns (
-        uint256, uint256, uint256, uint256, uint256, uint256
-    ) {
-        return (ltvBps, minHealthBps, emergencyHealthBps, liquidityMinUSDC, perTxMaxUSDC, dailyMaxUSDC);
+    function getPolicy()
+        external
+        view
+        returns (uint256, uint256, uint256, uint256, uint256, uint256)
+    {
+        return (
+            ltvBps,
+            minHealthBps,
+            emergencyHealthBps,
+            liquidityMinUSDC,
+            perTxMaxUSDC,
+            dailyMaxUSDC
+        );
     }
 }

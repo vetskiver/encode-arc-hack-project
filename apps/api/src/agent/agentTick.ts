@@ -14,7 +14,6 @@ import {
   bpsToRatio,
 } from "../utils/math";
 import { rationaleHash } from "../utils/hash";
-import { usdcToNumber } from "../integrations/usdc";
 
 export async function agentTick(user: string): Promise<void> {
   console.log("[AgentTick] Starting tick for user:", user);
@@ -40,9 +39,13 @@ export async function agentTick(user: string): Promise<void> {
     store.addPrice(oracle.price, oracle.ts);
     const changePct = store.getChangePct();
 
-    // Update oracle snapshot on contract
+    // Update oracle snapshot on contract — non-fatal if method doesn't exist
     const priceBigInt = stork.priceToBigInt(oracle.price);
-    await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
+    try {
+      await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
+    } catch (oracleErr: any) {
+      console.warn("[AgentTick] setOracleSnapshot failed (non-fatal):", oracleErr.message);
+    }
 
     // 3. Read Circle balances
     const liquidityUSDC = await circle.getBalance("liquidity");
@@ -58,6 +61,19 @@ export async function agentTick(user: string): Promise<void> {
     const healthFactor = computeHealthFactor(maxBorrowUSDC, userState.debtUSDC);
 
     const pending = store.getPendingPayment();
+
+    // Normalize policy values: contract stores with 6 decimals, planner/safety need floats
+    // liquidityMinUSDC, perTxMaxUSDC, dailyMaxUSDC come from contract as raw bigint-ish numbers
+    // If they're 0 (policy not set), use sensible defaults so agent has real constraints to work with
+    const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0
+      ? Number(policy.liquidityMinUSDC)
+      : 500 * 1e6; // default: 500 USDC min liquidity
+    const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0
+      ? Number(policy.perTxMaxUSDC)
+      : 10_000 * 1e6; // default: 10k per tx
+    const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0
+      ? Number(policy.dailyMaxUSDC)
+      : 50_000 * 1e6; // default: 50k daily
 
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,
@@ -79,9 +95,9 @@ export async function agentTick(user: string): Promise<void> {
         ltvBps: policy.ltvBps,
         minHealthBps: policy.minHealthBps,
         emergencyHealthBps: policy.emergencyHealthBps,
-        liquidityMinUSDC: Number(policy.liquidityMinUSDC),
-        perTxMaxUSDC: Number(policy.perTxMaxUSDC),
-        dailyMaxUSDC: Number(policy.dailyMaxUSDC),
+        liquidityMinUSDC,
+        perTxMaxUSDC,
+        dailyMaxUSDC,
       },
     };
 
@@ -106,6 +122,7 @@ export async function agentTick(user: string): Promise<void> {
     // 5. Planner proposes plan
     const proposal = planner(snapshot);
     console.log("[AgentTick] Planner proposal:", proposal.rationale);
+    console.log("[AgentTick] Planner actions:", proposal.actions.length, proposal.actions.map(a => `${a.type}:${a.amountUSDC}`));
 
     // 6. Safety controller validates
     const safetyResult = safetyController(snapshot, proposal);
@@ -116,10 +133,13 @@ export async function agentTick(user: string): Promise<void> {
       setStatus(status);
       setLastReason(`Blocked: ${safetyResult.reason}`);
 
-      // Log blocked decision on Arc
       const snapshotStr = JSON.stringify({ hf: healthFactor.toFixed(4), reason: safetyResult.reason });
       const rHash = rationaleHash(safetyResult.reason);
-      await arc.logDecision(snapshotStr, "BLOCKED", rHash);
+      try {
+        await arc.logDecision(snapshotStr, "BLOCKED", rHash);
+      } catch (logErr: any) {
+        console.warn("[AgentTick] logDecision failed:", logErr.message);
+      }
 
       store.addLog({
         ts: Date.now(),
@@ -138,7 +158,6 @@ export async function agentTick(user: string): Promise<void> {
       console.log(`[AgentTick] Executing ${action.type}: ${action.amountUSDC} USDC`);
       await executeAction(action, snapshot, user);
 
-      // If this was a payment, remove from pending
       if (action.type === "payment" && pending) {
         store.removePendingPayment();
       }
@@ -163,9 +182,9 @@ export async function agentTick(user: string): Promise<void> {
       setLastReason(`All healthy. HF=${healthFactor.toFixed(2)}, liquidity=${liquidityUSDC.toFixed(2)}`);
     }
 
-    console.log("[AgentTick] Tick completed");
+    console.log("[AgentTick] Tick completed successfully");
   } catch (err: any) {
-    console.error("[AgentTick] Error:", err.message);
+    console.error("[AgentTick] Fatal error:", err.message, err.stack);
     setStatus("Risk Mode");
     setLastReason(`Error: ${err.message}`);
   }

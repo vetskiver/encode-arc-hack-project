@@ -1,8 +1,11 @@
 import React from "react";
 import { Snapshot } from "../lib/types";
+import HealthFactorGauge from "./HealthFactorGauge";
 
 interface Props {
   snapshot: Snapshot | null;
+  minHealthBps?: number;
+  emergencyHealthBps?: number;
 }
 
 function formatCollateralUnits(raw: string, decimals: number): string {
@@ -19,75 +22,104 @@ function formatCollateralUnits(raw: string, decimals: number): string {
   }
 }
 
-export default function RiskOverview({ snapshot }: Props) {
+export default function RiskOverview({
+  snapshot,
+  minHealthBps = 14000,
+  emergencyHealthBps = 12000,
+}: Props) {
   if (!snapshot) {
     return (
-      <div style={{ ...styles.card, animationDelay: "0.05s" }}>
+      <div style={styles.card}>
         <h3 style={styles.heading}>Treasury Risk Overview</h3>
         <p style={styles.muted}>No data yet. Run the agent or wait for a tick.</p>
       </div>
     );
   }
 
-  const hf = snapshot.healthFactor;
-  const hfColor =
-    hf >= 1.5 ? "var(--success)" : hf >= 1.2 ? "var(--warning)" : "var(--danger)";
-  const hfLabel = hf >= 1.5 ? "SAFE" : hf >= 1.2 ? "WARN" : "DANGER";
-
   const debtNum = parseFloat(snapshot.debtUSDC);
   const maxBorrowNum = parseFloat(snapshot.maxBorrowUSDC);
   const availableBorrow = Math.max(0, maxBorrowNum - debtNum);
   const collateralUnits = formatCollateralUnits(snapshot.collateralAmount, 2);
+  const collateralValueNum = parseFloat(snapshot.collateralValueUSDC);
   const sourceLabel = snapshot.oracleSource === "stork" ? "Stork" : "Simulated";
+  const changePctColor = snapshot.changePct >= 0 ? "#10b981" : "#ef4444";
+
+  const fmt = (n: number) =>
+    n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   return (
-    <div style={{ ...styles.card, animationDelay: "0.05s" }}>
+    <div style={styles.card}>
       <h3 style={styles.heading}>Treasury Risk Overview</h3>
-      <div style={styles.grid}>
-        <div style={styles.metric}>
-          <span style={styles.label}>Oracle Price</span>
-          <span style={styles.value}>${snapshot.oraclePrice.toFixed(2)}</span>
-          <span style={styles.sub}>
-            Updated: {new Date(snapshot.oracleTs).toLocaleTimeString()}
-            {" | "}
-            Change: {snapshot.changePct.toFixed(2)}%
-            {" | "}
-            Source: {sourceLabel}
-          </span>
+
+      <div style={styles.layout}>
+        {/* Left: gauge */}
+        <div style={styles.gaugeCol}>
+          <HealthFactorGauge
+            healthFactor={snapshot.healthFactor}
+            minHealthBps={minHealthBps}
+            emergencyHealthBps={emergencyHealthBps}
+          />
         </div>
-        <div style={styles.metric}>
-          <span style={styles.label}>Health Factor</span>
-          <span style={{ ...styles.value, color: hfColor, fontSize: 28 }}>
-            {hf >= 100 ? "∞" : hf.toFixed(2)}
-          </span>
-          <span style={{ ...styles.sub, color: hfColor }}>{hfLabel}</span>
-        </div>
-        <div style={styles.metric}>
-          <span style={styles.label}>RWA Collateral</span>
-          <span style={styles.value}>{collateralUnits} units</span>
-          <span style={styles.sub}>
-            Value: ${parseFloat(snapshot.collateralValueUSDC).toLocaleString()}
-          </span>
-        </div>
-        <div style={styles.metric}>
-          <span style={styles.label}>Credit Line Debt</span>
-          <span style={styles.value}>${debtNum.toLocaleString()}</span>
-        </div>
-        <div style={styles.metric}>
-          <span style={styles.label}>Max Borrow</span>
-          <span style={styles.value}>${maxBorrowNum.toLocaleString()}</span>
-        </div>
-        <div style={styles.metric}>
-          <span style={styles.label}>Available Borrow</span>
-          <span style={styles.value}>${availableBorrow.toLocaleString()}</span>
+
+        {/* Right: metrics grid */}
+        <div style={styles.metricsGrid}>
+          <Metric
+            label="Oracle Price"
+            value={`$${snapshot.oraclePrice.toFixed(2)}`}
+            sub={
+              <>
+                <span style={{ color: changePctColor }}>
+                  {snapshot.changePct >= 0 ? "▲" : "▼"}{" "}
+                  {Math.abs(snapshot.changePct).toFixed(2)}%
+                </span>
+                {" · "}
+                {new Date(snapshot.oracleTs).toLocaleTimeString()}
+                {" · "}
+                {sourceLabel}
+              </>
+            }
+          />
+          <Metric
+            label="Collateral"
+            value={`${collateralUnits} units`}
+            sub={`Value: $${fmt(collateralValueNum)}`}
+          />
+          <Metric
+            label="Debt (USDC)"
+            value={`$${fmt(debtNum)}`}
+          />
+          <Metric
+            label="Max Borrow"
+            value={`$${fmt(maxBorrowNum)}`}
+            sub={`$${fmt(availableBorrow)} available`}
+          />
         </div>
       </div>
+
       {snapshot.pendingPayment && (
         <div style={styles.pending}>
-          Pending Vendor Payment: ${snapshot.pendingPayment.amountUSDC} to{" "}
-          {snapshot.pendingPayment.to}
+          ⏳ Pending Vendor Payment: ${snapshot.pendingPayment.amountUSDC} →{" "}
+          <span style={styles.pendingAddr}>{snapshot.pendingPayment.to}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: React.ReactNode;
+}) {
+  return (
+    <div style={styles.metric}>
+      <span style={styles.metricLabel}>{label}</span>
+      <span style={styles.metricValue}>{value}</span>
+      {sub && <span style={styles.metricSub}>{sub}</span>}
     </div>
   );
 }
@@ -102,36 +134,48 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "var(--shadow)",
     backdropFilter: "blur(6px)",
     animation: "fadeUp 0.6s ease both",
+    animationDelay: "0.05s",
   },
   heading: {
-    margin: "0 0 16px 0",
+    margin: "0 0 20px 0",
     fontSize: 16,
     fontWeight: 700,
     letterSpacing: 0.2,
   },
-  grid: {
+  layout: {
+    display: "flex",
+    gap: 24,
+    alignItems: "center",
+    flexWrap: "wrap" as const,
+  },
+  gaugeCol: {
+    flexShrink: 0,
+  },
+  metricsGrid: {
+    flex: 1,
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
     gap: 16,
+    minWidth: 0,
   },
   metric: {
     display: "flex",
     flexDirection: "column" as const,
-    gap: 4,
-    minWidth: 0,
+    gap: 3,
   },
-  label: {
-    fontSize: 12,
+  metricLabel: {
+    fontSize: 11,
     color: "var(--muted)",
     textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    fontWeight: 600,
   },
-  value: {
+  metricValue: {
     fontSize: 20,
     fontWeight: 700,
     lineHeight: 1.15,
-    overflowWrap: "anywhere",
   },
-  sub: {
+  metricSub: {
     fontSize: 12,
     color: "var(--muted)",
   },
@@ -140,12 +184,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
   pending: {
-    marginTop: 16,
-    padding: "8px 12px",
-    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    marginTop: 20,
+    padding: "8px 14px",
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
     borderRadius: 10,
     fontSize: 13,
-    color: "var(--warning)",
-    border: "1px solid rgba(245, 158, 11, 0.35)",
+    color: "#f59e0b",
+    border: "1px solid rgba(245, 158, 11, 0.3)",
+  },
+  pendingAddr: {
+    fontFamily: "monospace",
+    fontSize: 12,
+    opacity: 0.8,
   },
 };
