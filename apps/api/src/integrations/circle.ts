@@ -141,14 +141,18 @@ export async function transfer(
     const body: any = {
       idempotencyKey,
       entitySecretCiphertext: entitySecret,
-      source: { type: "wallet", walletId: sourceWalletId },
+      source: { type: "wallet", walletId: sourceWalletId, id: sourceWalletId },
       destination: isBucket && destinationAddress
-        ? { type: "wallet", walletId: destinationAddress }
+        ? { type: "wallet", walletId: destinationAddress, id: destinationAddress }
         : {
             type: "blockchain",
             address: destinationAddress,
+            destinationAddress,
             chain: "ARC-TESTNET",
           },
+      // Top-level hints for Circle validation
+      walletId: sourceWalletId,
+      destinationAddress: isBucket ? undefined : destinationAddress,
       tokenId,
       amounts: [amountUSDC.toFixed(6)],
       feeLevel: "LOW",
