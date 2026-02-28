@@ -5,19 +5,11 @@ import { agentTick } from "./agent/agentTick";
 import * as arc from "./integrations/arc";
 import * as circle from "./integrations/circle";
 import * as stork from "./integrations/stork";
-import { formatUSDC, numberToUSDC } from "./integrations/usdc";
+import { numberToUSDC } from "./integrations/usdc";
 import { rationaleHash } from "./utils/hash";
-<<<<<<< HEAD
-import {
-  computeCollateralValueUSDC,
-  computeMaxBorrow,
-  computeHealthFactor,
-} from "./utils/math";
-import { BucketName } from "./integrations/circle";
-=======
->>>>>>> 05d5fca (Bug fixes: ignore duplicate timestamps, oracle override now clears stale history, return reasonable defaults when contract reuturns nulls, store.addPrice() removed as it was double adding when frontend polled)
 
 const router = Router();
+type BucketName = "liquidity" | "reserve" | "yield" | "creditFacility";
 
 // GET /api/status
 router.get("/api/status", async (_req: Request, res: Response) => {

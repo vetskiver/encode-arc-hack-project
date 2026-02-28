@@ -235,25 +235,19 @@ export async function recordPayment(
   return receipt.hash;
 }
 
-export async function logDecision(
-  snapshot: string,
-  action: string,
-  rationaleHashBytes: string
-): Promise<string> {
-  if (!contract) return "sim-log-" + Date.now();
-<<<<<<< HEAD
-  const tx = await contract.logDecision(snapshot, action, rationaleHashBytes);
-  const receipt = await tx.wait();
-  return receipt.hash;
-}
-
 export async function resetUser(user: string): Promise<string> {
   if (!contract) return "sim-reset-" + Date.now();
   const tx = await contract.resetUser(user);
   const receipt = await tx.wait();
   return receipt.hash;
 }
-=======
+
+export async function logDecision(
+  snapshot: string,
+  action: string,
+  rationaleHashBytes: string
+): Promise<string> {
+  if (!contract) return "sim-log-" + Date.now();
   try {
     const tx = await contract.logDecision(snapshot, action, rationaleHashBytes);
     const receipt = await tx.wait();
@@ -263,4 +257,3 @@ export async function resetUser(user: string): Promise<string> {
     return "sim-log-" + Date.now();
   }
 }
->>>>>>> 05d5fca (Bug fixes: ignore duplicate timestamps, oracle override now clears stale history, return reasonable defaults when contract reuturns nulls, store.addPrice() removed as it was double adding when frontend polled)

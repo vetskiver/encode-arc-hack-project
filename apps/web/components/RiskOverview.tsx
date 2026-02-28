@@ -40,6 +40,10 @@ export default function RiskOverview({ snapshot }: Props) {
   const collateralUnits = formatCollateralUnits(snapshot.collateralAmount, 2);
   const sourceLabel = snapshot.oracleSource === "stork" ? "Stork" : "Simulated";
 
+
+  // collateralValueUSDC is a 6-decimal USDC string like "61000.000000"
+  const collateralValueNum = parseFloat(snapshot.collateralValueUSDC);
+
   return (
     <div style={{ ...styles.card, animationDelay: "0.05s" }}>
       <h3 style={styles.heading}>Treasury Risk Overview</h3>
@@ -63,23 +67,25 @@ export default function RiskOverview({ snapshot }: Props) {
           <span style={{ ...styles.sub, color: hfColor }}>{hfLabel}</span>
         </div>
         <div style={styles.metric}>
-          <span style={styles.label}>RWA Collateral</span>
-          <span style={styles.value}>{collateralUnits} units</span>
+          <span style={styles.label}>Collateral</span>
+          <span style={styles.value}>
+            {collateralUnits} units
+          </span>
           <span style={styles.sub}>
-            Value: ${parseFloat(snapshot.collateralValueUSDC).toLocaleString()}
+            Value: ${collateralValueNum.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
         </div>
         <div style={styles.metric}>
-          <span style={styles.label}>Credit Line Debt</span>
-          <span style={styles.value}>${debtNum.toLocaleString()}</span>
+          <span style={styles.label}>Debt (USDC)</span>
+          <span style={styles.value}>${debtNum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
         </div>
         <div style={styles.metric}>
           <span style={styles.label}>Max Borrow</span>
-          <span style={styles.value}>${maxBorrowNum.toLocaleString()}</span>
+          <span style={styles.value}>${maxBorrowNum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
         </div>
         <div style={styles.metric}>
           <span style={styles.label}>Available Borrow</span>
-          <span style={styles.value}>${availableBorrow.toLocaleString()}</span>
+          <span style={styles.value}>${availableBorrow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
         </div>
       </div>
       {snapshot.pendingPayment && (

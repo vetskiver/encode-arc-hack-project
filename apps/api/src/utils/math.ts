@@ -1,7 +1,3 @@
-/**
- * USDC has 6 decimals. Collateral and oracle prices use 18 decimals.
- */
-
 const USDC_DECIMALS = 6;
 const PRICE_DECIMALS = 18;
 const BPS_BASE = 10000;
@@ -34,6 +30,11 @@ export function usdcToNumber(amount: bigint): number {
 
 /**
  * collateralValueUSDC (6 dec) = collateralAmount (18 dec) * oraclePrice (18 dec) / 1e30
+ *
+ * Example: 100 units * $100 price
+ *   = (100 * 1e18) * (100 * 1e18) / 1e30
+ *   = 10000 * 1e36 / 1e30
+ *   = 10000 * 1e6  ← correct: $10,000 in 6-decimal USDC
  */
 export function computeCollateralValueUSDC(
   collateralAmount: bigint,
@@ -60,13 +61,21 @@ export function computeHealthFactor(
   maxBorrowUSDC: bigint,
   debtUSDC: bigint
 ): number {
-  if (debtUSDC <= 0n) return 999.0; // No debt means healthy
+  if (debtUSDC <= 0n) return 999.0;
   return Number(maxBorrowUSDC) / Number(debtUSDC > 0n ? debtUSDC : 1n);
 }
 
 /** Convert BPS to ratio number (14000 -> 1.4) */
 export function bpsToRatio(bps: number): number {
   return bps / BPS_BASE;
+}
+
+/**
+ * Convert 18-decimal collateral bigint to human-readable units number.
+ * e.g. 100000000000000000000n → 100.0
+ */
+export function collateralToUnits(collateralAmount: bigint): number {
+  return Number(collateralAmount) / 1e18;
 }
 
 /**
