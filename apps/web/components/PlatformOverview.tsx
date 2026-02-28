@@ -3,6 +3,7 @@ import { StatusResponse } from "../lib/types";
 
 type Props = {
   status: StatusResponse | null;
+  title?: string;
 };
 
 function formatNumber(n: number, opts?: Intl.NumberFormatOptions) {
@@ -10,8 +11,6 @@ function formatNumber(n: number, opts?: Intl.NumberFormatOptions) {
 }
 
 function formatUSDC(n: number) {
-  // if your values are already in whole USDC, keep as-is.
-  // if they’re in “micros” (6 decimals), divide by 1e6 here.
   return `${formatNumber(n, { maximumFractionDigits: 0 })} USDC`;
 }
 
@@ -26,10 +25,25 @@ function riskFromHF(hf?: number | null) {
   return { label: "Red (Emergency)", tone: "bad" as const };
 }
 
-export default function PlatformOverview({ status }: Props) {
-  const snap: any = status?.snapshot ?? null;
+function secondsUntil(nextTickAt: any): number | null {
+  if (nextTickAt == null) return null;
 
-  // 🔧 Map these to your real fields:
+  // If it’s already a number and looks like "seconds remaining"
+  if (typeof nextTickAt === "number" && nextTickAt < 1e9) return Math.max(0, Math.round(nextTickAt));
+
+  // Otherwise treat it like a timestamp (ms or ISO string)
+  const t = typeof nextTickAt === "number" ? nextTickAt : new Date(nextTickAt).getTime();
+  if (!Number.isFinite(t)) return null;
+
+  const delta = Math.round((t - Date.now()) / 1000);
+  return Math.max(0, delta);
+}
+
+export default function PlatformOverview({ status, title }: Props) {
+  const snap: any = status?.snapshot ?? null;
+  const titleText = title ?? "Platform Overview";
+
+  // 🔧 Map these to your real fields if needed:
   const liquidityPoolUSDC =
     snap?.liquidityPoolUSDC ??
     (snap?.liquidity ?? 0) + (snap?.reserve ?? 0) + (snap?.yield ?? 0);
@@ -42,19 +56,18 @@ export default function PlatformOverview({ status }: Props) {
   const hf = snap?.healthFactor ?? snap?.hf ?? null;
   const risk = riskFromHF(hf);
 
-  // “Alive” status line
   const agentActive = status?.agentEnabled ?? false;
-//   const oracleSource = status?.oracleSource ?? "STORK (Live)";
+  const oracleSource = (status as any)?.oracleSource ?? "STORK (Live)";
 
-  // If you have a next-tick field, map it here
-  const nextEvalSeconds =
-    status?.nextTickAt ??
-    status?.nextTickAt ??
-    status?.nextTickAt ??
-    null;
+  // Your file shows nextTickAt exists — show countdown if it’s a timestamp.
+  const nextEvalSeconds = secondsUntil((status as any)?.nextTickAt);
 
   return (
     <div style={styles.wrap}>
+      <div style={styles.headerRow}>
+        <h2 style={styles.headerTitle}>{titleText}</h2>
+      </div>
+
       <div style={styles.grid}>
         <MetricCard
           title="Total Platform Liquidity Pool (USDC)"
@@ -83,9 +96,11 @@ export default function PlatformOverview({ status }: Props) {
             {agentActive ? "ACTIVE" : "INACTIVE"}
           </span>
         </div>
+
         <div style={styles.subItem}>
-          {/* <span style={styles.subLabel}>Oracle Source:</span> <span>{oracleSource}</span> */}
+          <span style={styles.subLabel}>Oracle Source:</span> <span>{oracleSource}</span>
         </div>
+
         <div style={styles.subItem}>
           <span style={styles.subLabel}>Next Evaluation Cycle:</span>{" "}
           <span>{nextEvalSeconds == null ? "—" : `${nextEvalSeconds}s`}</span>
@@ -142,6 +157,21 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "12px auto 0",
     padding: "0 20px",
   },
+
+  headerRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  headerTitle: {
+    margin: 0,
+    fontSize: 14,
+    fontWeight: 900,
+    letterSpacing: 0.3,
+    opacity: 0.85,
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",

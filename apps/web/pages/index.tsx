@@ -9,6 +9,7 @@ import { getStatus, getLogs } from "../lib/api";
 import { StatusResponse, ActionLog } from "../lib/types";
 import CompanyCard from "../components/CompanyCard";
 import PlatformOverview from "../components/PlatformOverview"
+import PlatformActivityFeed from "../components/PlatformActivityFeed";
 
 const POLL_INTERVAL = 3000;
 
@@ -74,20 +75,22 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={styles.main}>
+      {/* <div style={styles.main}>
         <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} />
         <TreasuryBuckets snapshot={status?.snapshot || null} />
         <ActionLogTable logs={logs} />
-      </div>
+      </div> */}
 
-      <div style={styles.side}>
+      {/* <div style={styles.side}>
         <CollateralPanel
           defaultUser={DEFAULT_USER}
           agentEnabled={status?.agentEnabled || false}
           snapshot={status?.snapshot || null}
         />
         <PaymentRequestForm defaultUser={DEFAULT_USER} />
-      </div>
+      </div> */}
+
+      <PlatformActivityFeed logs={logs} />
 
       
     </div>
