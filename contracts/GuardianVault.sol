@@ -41,6 +41,7 @@ contract GuardianVault {
     event PaymentRecorded(address indexed user, address indexed to, uint256 amount, string circleTxRef);
     event AgentDecisionLogged(string snapshot, string action, bytes32 rationaleHash);
     event UserReset(address indexed user);
+    event AgentUpdated(address indexed oldAgent, address indexed newAgent);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -198,15 +199,6 @@ contract GuardianVault {
         bytes32 rationaleHash
     ) external onlyAgent {
         emit AgentDecisionLogged(snapshot, action, rationaleHash);
-    }
-
-    // --- Demo-only reset helper ---
-    function resetUser(address user) external onlyAgent {
-        collateralAmount[user] = 0;
-        debtUSDC[user] = 0;
-        dailySpent[user] = 0;
-        dailyResetTs[user] = block.timestamp;
-        emit UserReset(user);
     }
 
     // --- View helpers ---

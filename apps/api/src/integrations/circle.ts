@@ -5,6 +5,12 @@ let client: AxiosInstance;
 
 const CIRCLE_BASE_URL = "https://api.circle.com/v1/w3s";
 
+// Cached RSA public key from Circle (fetched at init)
+let circlePublicKey: string | null = null;
+
+// Cached wallet blockchain addresses (walletId -> address)
+const walletAddressCache: Record<string, string> = {};
+
 export function initCircle(): void {
   const apiKey = process.env.CIRCLE_API_KEY;
   if (!apiKey) {
@@ -36,6 +42,76 @@ export function initCircle(): void {
   }
   if (!process.env.CIRCLE_ENTITY_SECRET) {
     console.warn("[Circle] Missing CIRCLE_ENTITY_SECRET — transfers will simulate");
+  }
+
+  // Fetch public key and wallet addresses in background
+  fetchPublicKey().catch((err) =>
+    console.error("[Circle] Failed to fetch public key:", err.message)
+  );
+  resolveWalletAddresses().catch((err) =>
+    console.error("[Circle] Failed to resolve wallet addresses:", err.message)
+  );
+}
+
+/**
+ * Fetch Circle's RSA public key for encrypting entity secret.
+ */
+async function fetchPublicKey(): Promise<void> {
+  if (!client) return;
+  const res = await client.get("/config/entity/publicKey");
+  circlePublicKey = res.data?.data?.publicKey;
+  if (circlePublicKey) {
+    console.log("[Circle] Fetched entity public key");
+  } else {
+    console.warn("[Circle] No public key returned from /config/entity/publicKey");
+  }
+}
+
+/**
+ * Encrypt the entity secret with Circle's RSA public key (RSA-OAEP, SHA-256).
+ * Must produce a fresh ciphertext for every API request.
+ */
+function encryptEntitySecret(): string {
+  const entitySecretHex = process.env.CIRCLE_ENTITY_SECRET || "";
+  if (!circlePublicKey || !entitySecretHex) {
+    throw new Error("Missing Circle public key or entity secret");
+  }
+
+  const entitySecretBuf = Buffer.from(entitySecretHex, "hex");
+  const encrypted = crypto.publicEncrypt(
+    {
+      key: circlePublicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    entitySecretBuf
+  );
+  return encrypted.toString("base64");
+}
+
+/**
+ * Look up the blockchain address for each configured wallet and cache it.
+ */
+async function resolveWalletAddresses(): Promise<void> {
+  if (!client) return;
+  const walletIds = [
+    process.env.CIRCLE_WALLET_LIQUIDITY_ID,
+    process.env.CIRCLE_WALLET_RESERVE_ID,
+    process.env.CIRCLE_WALLET_YIELD_ID,
+    process.env.CIRCLE_WALLET_CREDIT_FACILITY_ID,
+  ].filter(Boolean) as string[];
+
+  for (const wid of walletIds) {
+    try {
+      const res = await client.get(`/wallets/${wid}`);
+      const address = res.data?.data?.wallet?.address;
+      if (address) {
+        walletAddressCache[wid] = address;
+        console.log(`[Circle] Wallet ${wid} -> ${address}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Circle] Could not resolve address for wallet ${wid}:`, err.message);
+    }
   }
 }
 
@@ -78,8 +154,8 @@ export async function getBalance(bucket: BucketName): Promise<number> {
     );
     return usdcBal ? parseFloat(usdcBal.amount) : 0;
   } catch (err: any) {
-    console.error(`[Circle] getBalance(${bucket}) error:`, err.message);
-    return simBalances[bucket];
+    console.error(`[Circle] getBalance(${bucket}) API error (returning 0, NOT sim defaults):`, err.response?.data || err.message);
+    return 0;
   }
 }
 
@@ -98,7 +174,7 @@ export async function transfer(
   const sourceWalletId = getWalletId(fromBucket);
 
   // Determine destination
-  let destinationAddress: string;
+  let destAddress: string;
   let isBucket = false;
   if (
     toBucketOrAddress === "liquidity" ||
@@ -106,16 +182,17 @@ export async function transfer(
     toBucketOrAddress === "yield" ||
     toBucketOrAddress === "creditFacility"
   ) {
-    destinationAddress = getWalletId(toBucketOrAddress as BucketName);
+    const destWalletId = getWalletId(toBucketOrAddress as BucketName);
+    destAddress = walletAddressCache[destWalletId] || "";
     isBucket = true;
   } else {
-    destinationAddress = toBucketOrAddress;
+    destAddress = toBucketOrAddress;
   }
 
   const entitySecret = process.env.CIRCLE_ENTITY_SECRET || "";
   const tokenId = process.env.USDC_TOKEN_ID_OR_ADDRESS || "";
 
-  if (!client || !sourceWalletId || !entitySecret || !tokenId) {
+  if (!client || !sourceWalletId || !entitySecret || !tokenId || !circlePublicKey) {
     // Simulation mode
     const ref = `sim-tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // Update sim balances
@@ -130,34 +207,28 @@ export async function transfer(
   }
 
   try {
-    if (!sourceWalletId) {
-      throw new Error(`Missing source walletId for bucket ${fromBucket}`);
+    if (!destAddress) {
+      throw new Error(
+        `Missing destination address for ${toBucketOrAddress}. ` +
+        (isBucket ? "Wallet address not resolved at startup." : "Empty address provided.")
+      );
     }
-    if (isBucket && !destinationAddress) {
-      throw new Error(`Missing destination walletId for bucket ${toBucketOrAddress}`);
-    }
-    const idempotencyKey = crypto.randomUUID();
 
-    const body: any = {
+    const idempotencyKey = crypto.randomUUID();
+    const entitySecretCiphertext = encryptEntitySecret();
+
+    // Circle W3S flat request body
+    const body: Record<string, unknown> = {
       idempotencyKey,
-      entitySecretCiphertext: entitySecret,
-      source: { type: "wallet", walletId: sourceWalletId, id: sourceWalletId },
-      destination: isBucket && destinationAddress
-        ? { type: "wallet", walletId: destinationAddress, id: destinationAddress }
-        : {
-            type: "blockchain",
-            address: destinationAddress,
-            destinationAddress,
-            chain: "ARC-TESTNET",
-          },
-      // Top-level hints for Circle validation
+      entitySecretCiphertext,
       walletId: sourceWalletId,
-      destinationAddress: isBucket ? undefined : destinationAddress,
       tokenId,
+      destinationAddress: destAddress,
       amounts: [amountUSDC.toFixed(6)],
       feeLevel: "LOW",
     };
 
+    console.log(`[Circle] Sending transfer: ${fromBucket} (${sourceWalletId}) -> ${destAddress}, ${amountUSDC} USDC`);
     const res = await client.post("/developer/transactions/transfer", body);
     const txId = res.data?.data?.id || `circle-${idempotencyKey}`;
     console.log(`[Circle] Transfer ${amountUSDC} USDC: ${fromBucket} -> ${toBucketOrAddress} tx=${txId}`);

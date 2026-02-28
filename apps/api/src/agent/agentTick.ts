@@ -67,13 +67,13 @@ export async function agentTick(user: string): Promise<void> {
     // If they're 0 (policy not set), use sensible defaults so agent has real constraints to work with
     const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0
       ? Number(policy.liquidityMinUSDC)
-      : 500 * 1e6; // default: 500 USDC min liquidity
+      : 5 * 1e6; // default: 5 USDC min liquidity (testnet-friendly)
     const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0
       ? Number(policy.perTxMaxUSDC)
-      : 10_000 * 1e6; // default: 10k per tx
+      : 10 * 1e6; // default: 10 USDC per tx (testnet-friendly)
     const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0
       ? Number(policy.dailyMaxUSDC)
-      : 50_000 * 1e6; // default: 50k daily
+      : 50 * 1e6; // default: 50 USDC daily
 
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,

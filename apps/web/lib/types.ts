@@ -2,7 +2,7 @@ export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
   oracleStale?: boolean;
-  oracleSource?: "stork" | "sim";
+  oracleSource?: "stork" | "gecko" | "sim";
   changePct: number;
   collateralAmount: string;
   collateralValueUSDC: string;
@@ -28,7 +28,7 @@ export interface OracleResponse {
   ts: number;
   changePct: number;
   stale: boolean;
-  source?: "stork" | "sim";
+  source?: "stork" | "gecko" | "sim";
 }
 
 export interface ActionLog {

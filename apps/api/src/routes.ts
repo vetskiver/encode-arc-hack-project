@@ -351,19 +351,4 @@ router.post("/api/policy/set", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/user/reset", async (req: Request, res: Response) => {
-  try {
-    const user = req.body.user || store.defaultUser;
-    const txHash = await arc.resetUser(user);
-    store.addLog({
-      ts: Date.now(), action: "RESET", amountUSDC: "0",
-      healthFactor: 999, rationale: `User state reset`,
-      circleTxRef: "", arcTxHash: txHash,
-    });
-    res.json({ txHash });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 export default router;
