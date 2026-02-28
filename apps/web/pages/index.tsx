@@ -8,6 +8,7 @@ import ActionLogTable from "../components/ActionLogTable";
 import { getStatus, getLogs } from "../lib/api";
 import { StatusResponse, ActionLog } from "../lib/types";
 import CompanyCard from "../components/CompanyCard";
+import PlatformOverview from "../components/PlatformOverview"
 
 const POLL_INTERVAL = 3000;
 
@@ -44,14 +45,20 @@ export default function Home() {
   }, [refresh]);
 
   return (
-    <div style={styles.page}>
-      <HeaderStatusBar status={status} />
+  <div style={styles.page}>
+    <HeaderStatusBar status={status} />
+    <PlatformOverview status={status} />
 
-      {/* Companies grid: exactly 3 columns (1 company per column) */}
-      <div style={styles.companySection}>
+    {error && <div style={styles.error}>Backend unreachable: {error}</div>}
+
+    {/*  One unified layout container */}
+    <div style={styles.layout}>
+
+      {/*  Companies spans BOTH columns, sits at bottom */}
+      <div style={styles.companies}>
         <div style={styles.companySectionHeader}>
           <h2 style={styles.companyTitle}>Companies</h2>
-          <div style={styles.companyHint}>Click a card to open its cockpit →</div>
+          <div style={styles.companyHint}>Click a card to view its data →</div>
         </div>
 
         <div style={styles.companyGrid}>
@@ -67,71 +74,59 @@ export default function Home() {
         </div>
       </div>
 
-      {error && (
-        <div style={styles.error}>
-          Backend unreachable: {error}. Make sure the API is running on port 4000.
-        </div>
-      )}
-
-      <div style={styles.content}>
-        <div style={styles.mainCol}>
-          <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} />
-          <TreasuryBuckets snapshot={status?.snapshot || null} />
-          <ActionLogTable logs={logs} />
-        </div>
-
-        <div style={styles.sideCol}>
-          <CollateralPanel
-            defaultUser={DEFAULT_USER}
-            agentEnabled={status?.agentEnabled || false}
-            snapshot={status?.snapshot || null}
-          />
-          <PaymentRequestForm defaultUser={DEFAULT_USER} />
-        </div>
+      <div style={styles.main}>
+        <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} />
+        <TreasuryBuckets snapshot={status?.snapshot || null} />
+        <ActionLogTable logs={logs} />
       </div>
+
+      <div style={styles.side}>
+        <CollateralPanel
+          defaultUser={DEFAULT_USER}
+          agentEnabled={status?.agentEnabled || false}
+          snapshot={status?.snapshot || null}
+        />
+        <PaymentRequestForm defaultUser={DEFAULT_USER} />
+      </div>
+
+      
     </div>
-  );
+  </div>
+);
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "transparent",
-    fontFamily: "var(--font-sans)",
-    color: "var(--text)",
-  },
-  error: {
-    padding: "10px 20px",
-    backgroundColor: "rgba(127, 29, 29, 0.6)",
-    color: "#fecaca",
-    fontSize: 13,
-    borderBottom: "1px solid rgba(248, 113, 113, 0.4)",
+  page: { minHeight: "100vh" },
+
+  layout: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    padding: 20,
+    display: "column",
+    gridTemplateColumns: "2fr 1fr",
+    gap: 16,
+    gridTemplateAreas: `
+      "main side"
+      "companies companies"
+    `,
+    alignItems: "start",
   },
 
-  companySection: {
-    maxWidth: 1400,
-    margin: "12px auto 0",
-    padding: "0 20px",
-  },
+  main: { gridArea: "main", display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
+  side: { gridArea: "side", display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
+
+  companies: { gridArea: "companies", marginTop: 8 },
+
   companySectionHeader: {
     display: "flex",
     alignItems: "baseline",
     justifyContent: "space-between",
     gap: 12,
     marginBottom: 12,
-    flexWrap: "wrap" as const,
+    flexWrap: "wrap",
   },
-  companyTitle: {
-    margin: 0,
-    fontSize: 16,
-    fontWeight: 800,
-    letterSpacing: 0.2,
-  },
-  companyHint: {
-    fontSize: 12,
-    color: "var(--muted)",
-    fontWeight: 600,
-  },
+  companyTitle: { margin: 0, fontSize: 16, fontWeight: 800 },
+  companyHint: { fontSize: 12, opacity: 0.75 },
 
   companyGrid: {
     display: "grid",
@@ -139,26 +134,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 16,
   },
 
-  content: {
-    display: "flex",
-    gap: 16,
-    padding: 20,
-    maxWidth: 1400,
-    margin: "0 auto",
-    flexWrap: "wrap" as const,
-  },
-  mainCol: {
-    flex: 2,
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 16,
-    minWidth: 320,
-  },
-  sideCol: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 16,
-    minWidth: 280,
+  error: {
+    padding: "10px 20px",
+    backgroundColor: "rgba(127, 29, 29, 0.6)",
   },
 };
