@@ -93,6 +93,16 @@ export default function RiskOverview({
             value={`$${fmt(maxBorrowNum)}`}
             sub={`$${fmt(availableBorrow)} available`}
           />
+          <Metric
+            label="Liquidity"
+            value={`$${fmt(parseFloat(snapshot.liquidityUSDC))}`}
+            sub="Payments & operations"
+          />
+          <Metric
+            label="Reserve"
+            value={`$${fmt(parseFloat(snapshot.reserveUSDC))}`}
+            sub="Repay buffer"
+          />
         </div>
       </div>
 
