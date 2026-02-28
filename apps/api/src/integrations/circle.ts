@@ -154,8 +154,8 @@ export async function getBalance(bucket: BucketName): Promise<number> {
     );
     return usdcBal ? parseFloat(usdcBal.amount) : 0;
   } catch (err: any) {
-    console.error(`[Circle] getBalance(${bucket}) error:`, err.response?.data || err.message);
-    return simBalances[bucket];
+    console.error(`[Circle] getBalance(${bucket}) API error (returning 0, NOT sim defaults):`, err.response?.data || err.message);
+    return 0;
   }
 }
 

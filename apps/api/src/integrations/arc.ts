@@ -112,9 +112,9 @@ export async function getPolicy(): Promise<ArcPolicy> {
       ltvBps: 6000,
       minHealthBps: 14000,
       emergencyHealthBps: 12000,
-      liquidityMinUSDC: BigInt(500 * 1e6),
-      perTxMaxUSDC: BigInt(10_000 * 1e6),
-      dailyMaxUSDC: BigInt(50_000 * 1e6),
+      liquidityMinUSDC: BigInt(5 * 1e6),
+      perTxMaxUSDC: BigInt(10 * 1e6),
+      dailyMaxUSDC: BigInt(50 * 1e6),
     };
   }
   try {
@@ -147,9 +147,9 @@ export async function getPolicy(): Promise<ArcPolicy> {
       ltvBps: 6000,
       minHealthBps: 14000,
       emergencyHealthBps: 12000,
-      liquidityMinUSDC: BigInt(500 * 1e6),
-      perTxMaxUSDC: BigInt(10_000 * 1e6),
-      dailyMaxUSDC: BigInt(50_000 * 1e6),
+      liquidityMinUSDC: BigInt(5 * 1e6),
+      perTxMaxUSDC: BigInt(10 * 1e6),
+      dailyMaxUSDC: BigInt(50 * 1e6),
     };
   }
 }
