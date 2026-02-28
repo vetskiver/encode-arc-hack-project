@@ -20,30 +20,56 @@ export default function HeaderStatusBar({ status }: Props) {
     return () => clearInterval(id);
   }, [status?.nextTickAt]);
 
+  const agentStatus = status?.status || "Offline";
+
   const statusColor =
-    status?.status === "Risk Mode"
+    agentStatus === "Risk Mode"
       ? "var(--danger)"
-      : status?.status === "Executing"
+      : agentStatus === "Executing"
       ? "var(--warning)"
+      : agentStatus === "Offline"
+      ? "var(--muted)"
       : "var(--success)";
+
+  // Prefix icon for lastReason based on content
+  const reason = status?.lastReason || "";
+  const reasonIcon = reason.startsWith("Blocked")
+    ? "🛑"
+    : reason.startsWith("Risk")
+    ? "⚠️"
+    : reason.startsWith("Error")
+    ? "❌"
+    : reason.startsWith("Executed")
+    ? "✅"
+    : "💬";
 
   return (
     <div style={styles.bar}>
+      {/* Left: title */}
       <div style={styles.title}>Treasury Credit Guardian</div>
+
+      {/* Center: status badge + countdown */}
       <div style={styles.statusGroup}>
-        <div
-          style={{
-            ...styles.statusBadge,
-            backgroundColor: statusColor,
-          }}
-        >
-          {status?.status || "Offline"}
+        <span style={{ ...styles.dot, background: statusColor }} />
+        <div style={{ ...styles.statusBadge, color: statusColor }}>
+          {agentStatus}
         </div>
         {status?.agentEnabled && countdown && (
-          <span style={styles.countdown}>Next tick: {countdown}</span>
+          <span style={styles.countdown}>· Next tick: {countdown}</span>
         )}
       </div>
-      <div style={styles.reason}>{status?.lastReason || "—"}</div>
+
+      {/* Right: lastReason — now prominent with icon and full text on hover */}
+      <div style={styles.reasonWrap} title={reason}>
+        {reason ? (
+          <>
+            <span style={styles.reasonIcon}>{reasonIcon}</span>
+            <span style={styles.reasonText}>{reason}</span>
+          </>
+        ) : (
+          <span style={styles.reasonEmpty}>Agent not started</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -52,42 +78,73 @@ const styles: Record<string, React.CSSProperties> = {
   bar: {
     display: "flex",
     alignItems: "center",
-    gap: 16,
-    padding: "12px 20px",
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    gap: 20,
+    padding: "10px 20px",
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
     color: "var(--text)",
     borderBottom: "1px solid var(--border)",
     backdropFilter: "blur(8px)",
-    boxShadow: "0 10px 30px rgba(2, 6, 23, 0.35)",
+    boxShadow: "0 4px 20px rgba(2, 6, 23, 0.4)",
+    position: "sticky" as const,
+    top: 0,
+    zIndex: 100,
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 700,
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+    flexShrink: 0,
   },
   statusGroup: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    flexShrink: 0,
   },
   statusBadge: {
-    padding: "4px 12px",
-    borderRadius: 12,
     fontSize: 13,
-    fontWeight: 600,
-    color: "#061018",
+    fontWeight: 700,
+    letterSpacing: 0.3,
   },
   countdown: {
     fontSize: 13,
     color: "var(--muted)",
+    fontVariantNumeric: "tabular-nums",
   },
-  reason: {
+  reasonWrap: {
     flex: 1,
-    textAlign: "right" as const,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 0,
+    padding: "5px 12px",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    cursor: "default",
+  },
+  reasonIcon: {
     fontSize: 13,
-    color: "var(--muted)",
+    flexShrink: 0,
+  },
+  reasonText: {
+    fontSize: 13,
+    color: "var(--text)",
+    opacity: 0.75,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+    minWidth: 0,
+  },
+  reasonEmpty: {
+    fontSize: 13,
+    color: "var(--muted)",
+    fontStyle: "italic",
   },
 };
