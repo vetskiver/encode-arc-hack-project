@@ -19,6 +19,10 @@ import { bpsToRatio } from "../utils/math";
  *   - pendingPayment.amountUSDC: plain float dollar amount
  */
 
+// Gas buffer: on ARC-TESTNET, USDC is the native token so gas is paid in USDC.
+// Never transfer a wallet's entire balance; leave headroom for gas fees.
+const GAS_RESERVE_USDC = 0.5;
+
 export function planner(snapshot: Snapshot): Plan {
   const actions: PlannedAction[] = [];
 
@@ -31,9 +35,11 @@ export function planner(snapshot: Snapshot): Plan {
   // Policy values are stored as 6-decimal raw in snapshot.policy (normalized by agentTick)
   const liquidityMin = snapshot.policy.liquidityMinUSDC / 1e6;
 
-  // Circle balance fields are already dollar floats
+  // Circle balance fields are already dollar floats — subtract gas reserve for spendable amounts
   const liquidity = snapshot.liquidityUSDC;
   const reserve = snapshot.reserveUSDC;
+  const spendableLiquidity = Math.max(0, liquidity - GAS_RESERVE_USDC);
+  const spendableReserve = Math.max(0, reserve - GAS_RESERVE_USDC);
   const hf = snapshot.healthFactor;
 
   console.log(`[Planner] debt=${debt}, maxBorrow=${maxBorrow}, hf=${hf}, liquidity=${liquidity}, liquidityMin=${liquidityMin}, reserve=${reserve}`);
@@ -42,7 +48,7 @@ export function planner(snapshot: Snapshot): Plan {
   if (hf < minHealth && debt > 0) {
     const repayMin = Math.max(0, debt - maxBorrow / targetHealth);
     if (repayMin > 0) {
-      const repayAmount = Math.min(repayMin, reserve + liquidity, debt);
+      const repayAmount = Math.min(repayMin, spendableReserve + spendableLiquidity, debt);
       if (repayAmount > 0) {
         actions.push({
           type: "repay",
@@ -81,8 +87,8 @@ export function planner(snapshot: Snapshot): Plan {
       // If borrow isn't enough, rebalance from reserve
       const covered = borrowAmount;
       const stillNeed = borrowNeed - covered;
-      if (stillNeed > 0.01 && reserve > 0) {
-        const rebalanceAmt = Math.min(stillNeed, reserve);
+      if (stillNeed > 0.01 && spendableReserve > 0) {
+        const rebalanceAmt = Math.min(stillNeed, spendableReserve);
         actions.push({
           type: "rebalance",
           amountUSDC: rebalanceAmt,
@@ -108,9 +114,9 @@ export function planner(snapshot: Snapshot): Plan {
   }
 
   // --- Maintain liquidity buffer ---
-  if (liquidity < liquidityMin && reserve > 0) {
+  if (liquidity < liquidityMin && spendableReserve > 0) {
     const deficit = liquidityMin - liquidity;
-    const moveAmount = Math.min(deficit, reserve);
+    const moveAmount = Math.min(deficit, spendableReserve);
     if (moveAmount > 0.01) {
       actions.push({
         type: "rebalance",
@@ -142,7 +148,7 @@ export function planner(snapshot: Snapshot): Plan {
   // --- Proactive repay if HF has headroom and excess liquidity is sitting idle ---
   if (debt > 0 && hf >= minHealth && hf < targetHealth + 0.5) {
     const repayToImprove = Math.max(0, debt - maxBorrow / (targetHealth + 0.3));
-    const availableForRepay = Math.max(0, liquidity - liquidityMin);
+    const availableForRepay = Math.max(0, spendableLiquidity - liquidityMin);
     const repayAmount = Math.min(repayToImprove, availableForRepay, debt);
     if (repayAmount > 1) {
       actions.push({
