@@ -42,7 +42,7 @@ export default function Home() {
   }, [refresh]);
 
   return (
-  <div style={{ ...styles.page, paddingLeft: 270 }}>
+  <div style={{ ...styles.page, paddingLeft: 240 }}>
     <SidebarNav />
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />

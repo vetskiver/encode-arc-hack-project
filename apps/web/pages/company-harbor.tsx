@@ -42,7 +42,7 @@ export default function CompanyHarborPage() {
   }, [refresh]);
 
   return (
-  <div style={styles.page}>
+  <div style={{ ...styles.page, paddingLeft: 240 }}>
     <SidebarNav />
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />
@@ -79,7 +79,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh" },
 
   layout: {
-    maxWidth: 1200,
+    maxWidth: 1000,
     margin: "0 auto",
     padding: 20,
     display: "column",

@@ -42,7 +42,7 @@ export default function CompanyAtlasPage() {
   }, [refresh]);
 
   return (
-  <div style={styles.page}>
+  <div style={{ ...styles.page, paddingLeft: 240 }}>
     <SidebarNav />
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />
@@ -79,7 +79,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh" },
 
   layout: {
-    maxWidth: 1200,
+    maxWidth: 950,
     margin: "0 auto",
     padding: 20,
     display: "column",
@@ -115,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   error: {
-    padding: "10px 20px",
+    padding: "16px 20px",
     backgroundColor: "rgba(127, 29, 29, 0.6)",
   },
 };

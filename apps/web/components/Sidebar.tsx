@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+
 type NavItem = { label: string; href: string};
 
 function isActive(asPath: string, href: string) {
@@ -23,6 +24,11 @@ export default function SidebarNav() {
   return (
     <aside style={styles.aside}>
       <div style={styles.brand}>Navigation</div>
+        <img
+            src="/horizn_logo.svg"
+            alt="Horizn"
+            style={{ width: 120, height: "auto", display: "block" }}
+        />
 
       <nav style={styles.nav}>
         {items.map((it) => {
@@ -61,7 +67,7 @@ export default function SidebarNav() {
             }
 
             .navItem:hover {
-                transform: scale(1.03);
+                transform: scale(1.05);
                 background: rgba(2, 6, 23, 0.34);
                 border-color: rgba(148, 163, 184, 0.18);
                 box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
@@ -71,11 +77,6 @@ export default function SidebarNav() {
                 border: 1px solid rgba(34, 211, 238, 0.28);
                 box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.10) inset;
             }
-
-            /* optional: active + hover a touch stronger */
-            .navItem.active:hover {
-                transform: scale(1.04);
-                border-color: rgba(34, 211, 238, 0.40);
             }
         `}</style>
         </aside>);
@@ -87,7 +88,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: 12,
     left: 12,
     bottom: 12,
-    width: 240,
+    width: 220,
     borderRadius: 18,
     padding: 14,
     background: "rgba(15, 23, 42, 0.72)",
@@ -102,7 +103,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 900,
     letterSpacing: 0.6,
-    opacity: 0.8,
+    opacity: 0.95,
     textTransform: "uppercase",
   },
   nav: { display: "flex", flexDirection: "column", gap: 8, marginTop: 6 },
