@@ -29,14 +29,10 @@ const GUARDIAN_VAULT_ABI = [
   "event RebalanceRecorded(string fromBucket, string toBucket, uint256 amount, string circleTxRef)",
   "event PaymentRecorded(address indexed user, address indexed to, uint256 amount, string circleTxRef)",
   "event AgentDecisionLogged(string snapshot, string action, bytes32 rationaleHash)",
-<<<<<<< HEAD
-  "event UserReset(address indexed user)",
-=======
   "function resetUser(address user)",
   "function setAgent(address _agent)",
   "event UserReset(address indexed user)",
   "event AgentUpdated(address indexed oldAgent, address indexed newAgent)",
->>>>>>> d941ad2 (Updated front end, add reset function to arc.ts)
 ];
 
 let provider: ethers.JsonRpcProvider | null = null;
