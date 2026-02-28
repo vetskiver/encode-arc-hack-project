@@ -18,6 +18,21 @@ export function initCircle(): void {
     },
   });
   console.log("[Circle] Initialized");
+
+  // Warn if required wallet IDs are missing (we'll fall back to simulation for those transfers)
+  const required = [
+    { key: "CIRCLE_WALLET_LIQUIDITY_ID", label: "liquidity" },
+    { key: "CIRCLE_WALLET_RESERVE_ID", label: "reserve" },
+    { key: "CIRCLE_WALLET_CREDIT_FACILITY_ID", label: "creditFacility" },
+  ];
+  for (const r of required) {
+    if (!process.env[r.key]) {
+      console.warn(`[Circle] Missing ${r.key} (${r.label} wallet) — transfers will simulate for that bucket`);
+    }
+  }
+  if (!process.env.USDC_TOKEN_ID_OR_ADDRESS) {
+    console.warn("[Circle] Missing USDC_TOKEN_ID_OR_ADDRESS — transfers will simulate");
+  }
 }
 
 export type BucketName = "liquidity" | "reserve" | "yield" | "creditFacility";

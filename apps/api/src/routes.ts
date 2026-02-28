@@ -73,16 +73,15 @@ router.get("/api/oracle", async (_req: Request, res: Response) => {
 // POST /api/collateral/register
 router.post("/api/collateral/register", async (req: Request, res: Response) => {
   try {
-    const { user, amount } = req.body;
-    if (!user || !amount) {
-      res.status(400).json({ error: "user and amount required" });
+    const { amount } = req.body;
+    if (!amount) {
+      res.status(400).json({ error: "amount required" });
       return;
     }
+    const user = store.defaultUser;
     // amount readable units -> store as 18-decimal bigint on contract
     const amountBigInt = BigInt(Math.round(parseFloat(amount) * 1e18));
     const txHash = await arc.registerCollateral(user, amountBigInt);
-
-    store.defaultUser = user;
 
     store.addLog({
       ts: Date.now(),
@@ -103,18 +102,18 @@ router.post("/api/collateral/register", async (req: Request, res: Response) => {
 // POST /api/payment/request
 router.post("/api/payment/request", (req: Request, res: Response) => {
   try {
-    const { user, to, amountUSDC } = req.body;
-    if (!user || !to || !amountUSDC) {
-      res.status(400).json({ error: "user, to, and amountUSDC required" });
+    const { to, amountUSDC } = req.body;
+    if (!to || !amountUSDC) {
+      res.status(400).json({ error: "to and amountUSDC required" });
       return;
     }
+    const user = store.defaultUser;
     store.queuePayment({
       user,
       to,
       amountUSDC,
       createdAt: Date.now(),
     });
-    store.defaultUser = user;
     res.json({ queued: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

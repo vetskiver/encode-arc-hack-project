@@ -39,7 +39,7 @@ class Store {
   actionLogs: ActionLog[] = [];
 
   // Default user for MVP
-  defaultUser: string = "0x0000000000000000000000000000000000000001";
+  defaultUser: string = process.env.DEFAULT_COMPANY_ADDRESS || "0x0000000000000000000000000000000000000001";
 
   // Track last ts added to prevent double-adds (agentTick + /api/oracle both call addPrice)
   private _lastAddedTs: number = 0;

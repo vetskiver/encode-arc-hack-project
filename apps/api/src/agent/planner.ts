@@ -122,6 +122,23 @@ export function planner(snapshot: Snapshot): Plan {
     }
   }
 
+  // --- Borrow to restore liquidity floor when safe ---
+  if (liquidity < liquidityMin && hf >= minHealth) {
+    const shortfall = liquidityMin - liquidity;
+    const currentDebt = debt;
+    const borrowHeadroom = Math.max(0, maxBorrow / targetHealth - currentDebt);
+    const perTxMax = snapshot.policy.perTxMaxUSDC / 1e6;
+    const borrowAmount = Math.min(shortfall, borrowHeadroom, perTxMax > 0 ? perTxMax : shortfall);
+
+    if (borrowAmount > 0.01) {
+      actions.push({
+        type: "borrow",
+        amountUSDC: borrowAmount,
+        rationale: `Borrow ${borrowAmount.toFixed(2)} USDC to restore liquidity floor (${liquidityMin.toFixed(2)}).`,
+      });
+    }
+  }
+
   // --- Proactive repay if HF has headroom and excess liquidity is sitting idle ---
   if (debt > 0 && hf >= minHealth && hf < targetHealth + 0.5) {
     const repayToImprove = Math.max(0, debt - maxBorrow / (targetHealth + 0.3));
