@@ -1,15 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
 import HeaderStatusBar from "../components/HeaderStatusBar";
-import RiskOverview from "../components/RiskOverview";
-import TreasuryBuckets from "../components/TreasuryBuckets";
-import PaymentRequestForm from "../components/PaymentRequestForm";
-import CollateralPanel from "../components/CollateralPanel";
-import ActionLogTable from "../components/ActionLogTable";
 import { getStatus, getLogs } from "../lib/api";
 import { StatusResponse, ActionLog } from "../lib/types";
 import CompanyCard from "../components/CompanyCard";
 import PlatformOverview from "../components/PlatformOverview"
 import PlatformActivityFeed from "../components/PlatformActivityFeed";
+import SidebarNav from "../components/Sidebar";
 
 const POLL_INTERVAL = 3000;
 
@@ -46,7 +42,8 @@ export default function Home() {
   }, [refresh]);
 
   return (
-  <div style={styles.page}>
+  <div style={{ ...styles.page, paddingLeft: 270 }}>
+    <SidebarNav />
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />
 
