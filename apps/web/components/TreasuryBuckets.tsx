@@ -9,32 +9,71 @@ export default function TreasuryBuckets({ snapshot }: Props) {
   const liquidity = snapshot ? parseFloat(snapshot.liquidityUSDC) : 0;
   const reserve = snapshot ? parseFloat(snapshot.reserveUSDC) : 0;
   const yieldBal = snapshot ? parseFloat(snapshot.yieldUSDC || "0") : 0;
+  const debt = snapshot ? parseFloat(snapshot.debtUSDC) : 0;
+  const hasDebt = debt > 0;
+
+  const fmt = (n: number) =>
+    "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   return (
     <div style={{ ...styles.card, animationDelay: "0.1s" }}>
       <h3 style={styles.heading}>Treasury Buckets</h3>
       <div style={styles.grid}>
-        <div style={styles.bucket}>
-          <div style={styles.bucketName}>Liquidity</div>
-          <div style={styles.bucketValue}>${liquidity.toLocaleString()}</div>
-          <div style={styles.bucketSub}>Payments & operations</div>
-        </div>
-        <div style={styles.bucket}>
-          <div style={styles.bucketName}>Reserve</div>
-          <div style={styles.bucketValue}>${reserve.toLocaleString()}</div>
-          <div style={styles.bucketSub}>Repay buffer</div>
-        </div>
-        <div style={styles.bucket}>
-          <div style={styles.bucketName}>Yield</div>
-          <div style={styles.bucketValue}>${yieldBal.toLocaleString()}</div>
-          <div style={styles.bucketSub}>Yield allocation</div>
-        </div>
-        <div style={styles.bucket}>
-          <div style={styles.bucketName}>Credit Facility</div>
-          <div style={styles.bucketValue}>—</div>
-          <div style={styles.bucketSub}>Borrow source / repay sink</div>
-        </div>
+        <Bucket
+          name="Liquidity"
+          value={snapshot ? fmt(liquidity) : "—"}
+          sub="Payments & operations"
+        />
+        <Bucket
+          name="Reserve"
+          value={snapshot ? fmt(reserve) : "—"}
+          sub="Repay buffer"
+        />
+        <Bucket
+          name="Yield"
+          value={snapshot ? fmt(yieldBal) : "—"}
+          sub="Yield allocation"
+        />
+        <Bucket
+          name="Credit Facility"
+          value={snapshot ? fmt(debt) : "—"}
+          sub={hasDebt ? "Outstanding debt" : "No active debt"}
+          valueStyle={hasDebt ? { color: "#f87171" } : { color: "var(--success)" }}
+          highlight={hasDebt}
+        />
       </div>
+    </div>
+  );
+}
+
+function Bucket({
+  name,
+  value,
+  sub,
+  valueStyle,
+  highlight,
+}: {
+  name: string;
+  value: string;
+  sub: string;
+  valueStyle?: React.CSSProperties;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        ...styles.bucket,
+        ...(highlight
+          ? {
+              borderColor: "rgba(248,113,113,0.3)",
+              backgroundColor: "rgba(248,113,113,0.06)",
+            }
+          : {}),
+      }}
+    >
+      <div style={styles.bucketName}>{name}</div>
+      <div style={{ ...styles.bucketValue, ...valueStyle }}>{value}</div>
+      <div style={styles.bucketSub}>{sub}</div>
     </div>
   );
 }
@@ -67,6 +106,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 16,
     textAlign: "center" as const,
     border: "1px solid var(--border)",
+    transition: "border-color 0.3s, background-color 0.3s",
   },
   bucketName: {
     fontSize: 13,
@@ -79,6 +119,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "var(--text)",
     marginBottom: 4,
+    transition: "color 0.3s",
   },
   bucketSub: {
     fontSize: 11,
