@@ -144,7 +144,7 @@ export async function transfer(
             chain: "ARC-TESTNET",
           },
       tokenId,
-      amounts: [{ amount: amountUSDC.toFixed(6), tokenId }],
+      amounts: [amountUSDC.toFixed(6)],
       feeLevel: "LOW",
     };
 
