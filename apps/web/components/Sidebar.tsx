@@ -30,17 +30,55 @@ export default function SidebarNav() {
 
           return (
             <Link key={it.href} href={it.href} scroll={false} style={{ textDecoration: "none" }}>
-              <div style={{ ...styles.item, ...(active ? styles.itemActive : {}) }}>
-                <span style={styles.label}>{it.label}</span>
-              </div>
+                <div className={`navItem ${active ? "active" : ""}`}>
+                    <span style={styles.label}>{it.label}</span>
+                </div>
             </Link>
           );
         })}
       </nav>
 
-      <div style={styles.footerHint}>Tip: Click a company to jump</div>
-    </aside>
-  );
+      <div style={styles.footerHint}></div>
+      <style jsx>{`
+            .navItem {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 10px;
+                border-radius: 14px;
+                border: 1px solid rgba(148, 163, 184, 0.10);
+                background: rgba(2, 6, 23, 0.22);
+                cursor: pointer;
+                user-select: none;
+
+                /* smooth hover/expand */
+                transition:
+                transform 140ms ease,
+                background 140ms ease,
+                border-color 140ms ease,
+                box-shadow 140ms ease;
+                transform-origin: left center;
+            }
+
+            .navItem:hover {
+                transform: scale(1.03);
+                background: rgba(2, 6, 23, 0.34);
+                border-color: rgba(148, 163, 184, 0.18);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+            }
+
+            .navItem.active {
+                border: 1px solid rgba(34, 211, 238, 0.28);
+                box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.10) inset;
+            }
+
+            /* optional: active + hover a touch stronger */
+            .navItem.active:hover {
+                transform: scale(1.04);
+                border-color: rgba(34, 211, 238, 0.40);
+            }
+        `}</style>
+        </aside>);
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -83,7 +121,4 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(34, 211, 238, 0.28)",
     boxShadow: "0 0 0 1px rgba(34, 211, 238, 0.10) inset",
   },
-  emoji: { width: 18, textAlign: "center" },
-  label: { fontSize: 13, fontWeight: 800, opacity: 0.92 },
-  footerHint: { marginTop: "auto", fontSize: 12, opacity: 0.7, fontWeight: 600 },
 };

@@ -1,5 +1,4 @@
 import React from "react";
-import { useRouter } from "next/router";
 import { StatusResponse } from "../lib/types";
 
 interface Props {
@@ -17,7 +16,6 @@ function getHFState(hf: number) {
 }
 
 export default function CompanyCard({ name, address, status, error }: Props) {
-  const router = useRouter();
   const snap = status?.snapshot;
   const hf = snap?.healthFactor ?? 999;
   const hfState = getHFState(hf);
@@ -33,7 +31,6 @@ export default function CompanyCard({ name, address, status, error }: Props) {
   return (
     <div
       style={{ ...styles.card, borderColor: hfState.color + "33" }}
-      onClick={() => router.push(`/company/${address}`)}
     >
       {/* Header */}
       <div style={styles.cardHeader}>
@@ -95,7 +92,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 16,
     border: "1px solid",
     padding: 20,
-    cursor: "pointer",
+    cursor: "default",
     transition: "transform 0.15s, box-shadow 0.15s",
     boxShadow: "var(--shadow)",
     backdropFilter: "blur(6px)",

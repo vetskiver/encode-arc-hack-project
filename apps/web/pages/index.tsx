@@ -56,7 +56,7 @@ export default function Home() {
       <div style={styles.companies}>
         <div style={styles.companySectionHeader}>
           <h2 style={styles.companyTitle}>Companies</h2>
-          <div style={styles.companyHint}>Click a card to view its data →</div>
+          <div style={styles.companyHint}>Use Navigation Bar to select a company</div>
         </div>
 
         <div style={styles.companyGrid}>
@@ -72,20 +72,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* <div style={styles.main}>
-        <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} />
-        <TreasuryBuckets snapshot={status?.snapshot || null} />
-        <ActionLogTable logs={logs} />
-      </div> */}
-
-      {/* <div style={styles.side}>
-        <CollateralPanel
-          defaultUser={DEFAULT_USER}
-          agentEnabled={status?.agentEnabled || false}
-          snapshot={status?.snapshot || null}
-        />
-        <PaymentRequestForm defaultUser={DEFAULT_USER} />
-      </div> */}
 
       <PlatformActivityFeed logs={logs} />
 
