@@ -14,6 +14,7 @@ type BucketName = "liquidity" | "reserve" | "yield" | "creditFacility";
 // GET /api/status
 router.get("/api/status", async (_req: Request, res: Response) => {
   try {
+    const user = (_req.query.user as string) || store.defaultUser;
     const t = store.telemetry;
     res.json({
       agentEnabled: t.agentEnabled,

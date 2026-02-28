@@ -1,3 +1,5 @@
+import { StatusResponse } from "./types";
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T> {
@@ -12,8 +14,13 @@ async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function getStatus() {
-  return fetchJSON<any>("/api/status");
+export async function getStatus(user?: string): Promise<StatusResponse> {
+  const url = user
+    ? `${BASE}/api/status?user=${encodeURIComponent(user)}`
+    : `${BASE}/api/status`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 export function getOracle() {
