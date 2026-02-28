@@ -78,6 +78,7 @@ export async function agentTick(user: string): Promise<void> {
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,
       oracleTs: oracle.ts,
+      oracleStale: oracle.stale,
       oracleSource: oracle.source,
       changePct,
       collateralAmount: userState.collateralAmount,
@@ -104,6 +105,7 @@ export async function agentTick(user: string): Promise<void> {
     setLastSnapshot({
       oraclePrice: oracle.price,
       oracleTs: oracle.ts,
+      oracleStale: oracle.stale,
       oracleSource: oracle.source,
       changePct,
       collateralAmount: userState.collateralAmount.toString(),

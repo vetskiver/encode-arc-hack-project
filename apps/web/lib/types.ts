@@ -1,6 +1,7 @@
 export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
+  oracleStale?: boolean;
   oracleSource?: "stork" | "sim";
   changePct: number;
   collateralAmount: string;

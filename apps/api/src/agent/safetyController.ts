@@ -3,6 +3,7 @@ import { bpsToRatio } from "../utils/math";
 export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
+  oracleStale: boolean;
   oracleSource?: "stork" | "sim";
   changePct: number;
   collateralAmount: bigint;
@@ -53,6 +54,7 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
   const emergencyHealth = bpsToRatio(snapshot.policy.emergencyHealthBps);
   const hf = snapshot.healthFactor;
   const changePctAbs = Math.abs(snapshot.changePct);
+  const oracleUntrusted = snapshot.oracleStale || snapshot.oracleSource === "sim";
 
   // Convert 6-decimal policy values to dollar floats for comparison
   const perTxMax = snapshot.policy.perTxMaxUSDC / 1e6;
@@ -122,6 +124,12 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
   for (const action of proposal.actions) {
     let a = { ...action };
 
+    // If oracle is stale or simulated, block debt-increasing actions
+    if (oracleUntrusted && (a.type === "borrow" || a.type === "payment")) {
+      console.log("[Safety] Blocking borrow/payment due to stale or simulated oracle");
+      continue;
+    }
+
     // Rule 5: Per-tx spending cap (dollar comparison)
     if (perTxMax > 0 && a.amountUSDC > perTxMax) {
       a.amountUSDC = perTxMax;
@@ -171,9 +179,11 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
     plan: { actions: validatedActions, rationale: proposal.rationale },
     reason: isRiskMode
       ? `Risk Mode: HF=${hf.toFixed(2)}, vol=${changePctAbs.toFixed(1)}%`
-      : nothingProposed
-        ? "All healthy, no actions needed"
-        : `Approved ${validatedActions.length} of ${proposal.actions.length} actions`,
-    riskMode: isRiskMode,
+      : oracleUntrusted
+        ? "Oracle stale/simulated: borrow/payment blocked"
+        : nothingProposed
+          ? "All healthy, no actions needed"
+          : `Approved ${validatedActions.length} of ${proposal.actions.length} actions`,
+    riskMode: isRiskMode || oracleUntrusted,
   };
 }
