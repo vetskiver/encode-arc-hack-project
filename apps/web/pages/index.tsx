@@ -9,6 +9,7 @@ import { getStatus, getLogs } from "../lib/api";
 import { StatusResponse, ActionLog } from "../lib/types";
 
 const POLL_INTERVAL = 3000;
+const HIDE_YIELD = (process.env.NEXT_PUBLIC_HIDE_YIELD || "").toLowerCase() === "true";
 
 const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
 

@@ -3,6 +3,7 @@ import { store } from "../store";
 import { setAgentEnabled, setNextTickAt, setStatus, setLastReason } from "./telemetry";
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let ticking = false;
 
 const TICK_MS = parseInt(process.env.AGENT_TICK_MS || "15000", 10);
 
@@ -20,11 +21,18 @@ export function startAgentLoop(user: string): void {
   console.log(`[AgentLoop] Starting loop every ${TICK_MS}ms for user: ${user}`);
 
   intervalHandle = setInterval(async () => {
+    if (ticking) {
+      console.warn("[AgentLoop] Skipping tick: previous tick still running");
+      return;
+    }
+    ticking = true;
     setNextTickAt(Date.now() + TICK_MS);
     try {
       await agentTick(user);
     } catch (err: any) {
       console.error("[AgentLoop] Tick error:", err.message);
+    } finally {
+      ticking = false;
     }
   }, TICK_MS);
 }

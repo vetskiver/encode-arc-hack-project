@@ -13,6 +13,17 @@ export interface ActionLog {
   rationale: string;
   circleTxRef: string;
   arcTxHash: string;
+  // V2 enhanced logging
+  trigger?: string;       // what triggered this action (e.g. "volatility 5.2% > threshold 3%")
+  policyRule?: string;    // which policy rule activated (e.g. "liquidityTargetRatio", "reserveRatio")
+  fromBucket?: string;    // source bucket for rebalance
+  toBucket?: string;      // destination bucket for rebalance
+  hfBefore?: number;      // health factor before action
+  hfAfter?: number;       // health factor after action (if available)
+  liquidityBefore?: number;
+  liquidityAfter?: number;
+  reserveBefore?: number;
+  reserveAfter?: number;
 }
 
 export interface Telemetry {
@@ -25,6 +36,12 @@ export interface Telemetry {
 
 /** Ring buffer for last K oracle prices */
 const PRICE_HISTORY_SIZE = 20;
+
+import fs from "fs";
+import path from "path";
+
+const DATA_DIR = path.resolve(__dirname, "../data");
+const STORE_FILE = path.join(DATA_DIR, "store.json");
 
 class Store {
   pendingPayments: PendingPayment[] = [];
@@ -44,6 +61,42 @@ class Store {
   // Track last ts added to prevent double-adds (agentTick + /api/oracle both call addPrice)
   private _lastAddedTs: number = 0;
 
+  constructor() {
+    this.load();
+  }
+
+  private load(): void {
+    try {
+      if (fs.existsSync(STORE_FILE)) {
+        const raw = fs.readFileSync(STORE_FILE, "utf-8");
+        const data = JSON.parse(raw);
+        this.pendingPayments = data.pendingPayments || [];
+        this.priceHistory = data.priceHistory || [];
+        this.telemetry = data.telemetry || this.telemetry;
+        this.actionLogs = data.actionLogs || [];
+        this._lastAddedTs = data._lastAddedTs || 0;
+      }
+    } catch (err: any) {
+      console.warn("[Store] Failed to load persisted state:", err.message);
+    }
+  }
+
+  private persist(): void {
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      const payload = {
+        pendingPayments: this.pendingPayments,
+        priceHistory: this.priceHistory,
+        telemetry: this.telemetry,
+        actionLogs: this.actionLogs,
+        _lastAddedTs: this._lastAddedTs,
+      };
+      fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2), "utf-8");
+    } catch (err: any) {
+      console.warn("[Store] Failed to persist state:", err.message);
+    }
+  }
+
   addPrice(price: number, ts: number): void {
     // Deduplicate: don't add same timestamp twice
     if (ts === this._lastAddedTs) return;
@@ -53,6 +106,7 @@ class Store {
     if (this.priceHistory.length > PRICE_HISTORY_SIZE) {
       this.priceHistory.shift();
     }
+    this.persist();
   }
 
   getChangePct(): number {
@@ -68,6 +122,7 @@ class Store {
     if (this.actionLogs.length > 100) {
       this.actionLogs.pop();
     }
+    this.persist();
   }
 
   getPendingPayment(): PendingPayment | null {
@@ -76,15 +131,28 @@ class Store {
 
   removePendingPayment(): void {
     this.pendingPayments.shift();
+    this.persist();
+  }
+
+  clearPendingPayments(): void {
+    this.pendingPayments = [];
+    this.persist();
   }
 
   queuePayment(payment: PendingPayment): void {
     this.pendingPayments.push(payment);
+    this.persist();
   }
 
   resetPriceHistory(): void {
     this.priceHistory = [];
     this._lastAddedTs = 0;
+    this.persist();
+  }
+
+  updateTelemetry(updates: Partial<Telemetry>): void {
+    this.telemetry = { ...this.telemetry, ...updates };
+    this.persist();
   }
 }
 
