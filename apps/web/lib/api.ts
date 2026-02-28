@@ -96,3 +96,20 @@ export function resetUser(user: string) {
     body: JSON.stringify({ user }),
   });
 }
+
+// V2: Policy endpoints
+export function getPolicy() {
+  return fetchJSON<any>("/api/policy");
+}
+
+export function updatePolicy(params: {
+  liquidityTargetRatio?: number;
+  reserveRatio?: number;
+  volatilityThresholdPct?: number;
+  targetHealthRatio?: number;
+}) {
+  return fetchJSON<any>("/api/policy/update", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}

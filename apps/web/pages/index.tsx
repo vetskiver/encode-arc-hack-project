@@ -8,11 +8,12 @@ import PlatformActivityFeed from "../components/PlatformActivityFeed";
 import SidebarNav from "../components/Sidebar";
 
 const POLL_INTERVAL = 3000;
-const SIDEBAR_W = 270;
-const SIDEBAR_W_COLLAPSED = 74;
-const SIDEBAR_MARGIN = 28;
+const HIDE_YIELD = (process.env.NEXT_PUBLIC_HIDE_YIELD || "").toLowerCase() === "true";
 
 const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
+const SIDEBAR_W = 240;
+const SIDEBAR_W_COLLAPSED = 72;
+const SIDEBAR_MARGIN = 16;
 
 const COMPANIES = [
   { name: "Atlas Manufacturing", address: "0x0000000000000000000000000000000000000001" },

@@ -25,11 +25,11 @@ function getHFConfig(hf: number, minHBps = 14000, emergHBps = 12000): HFConfig {
   if (hf >= NO_DEBT_SENTINEL) {
     return {
       state: "no-debt",
-      label: "NO DEBT",
-      color: "#6b7280",
-      glow: "rgba(107,114,128,0.3)",
-      trackColor: "rgba(107,114,128,0.15)",
-      pct: 1,
+      label: "SAFE",
+      color: "#10b981", // same green as safe
+      glow: "rgba(16,185,129,0.35)",
+      trackColor: "rgba(16,185,129,0.12)",
+      pct: 1, // full arc
     };
   }
   if (hf >= minH) {

@@ -13,6 +13,19 @@ export interface Snapshot {
   reserveUSDC: string;
   yieldUSDC: string;
   pendingPayment: { to: string; amountUSDC: string } | null;
+  liquidityRatio?: string;
+  reserveRatio?: string;
+  volatilityPct?: string;
+  targetHealth?: number;
+  liquidityTargetRatio?: number;
+  reserveRatioTarget?: number;
+  // V2: volatility threshold surfaced from policy
+  volatilityThreshold?: number;
+  // V3: yield policy surfaces
+  yieldRatePct?: number;
+  yieldRateStale?: boolean;
+  maxYieldAllocPct?: number;
+  minTargetYieldPct?: number;
 }
 
 export interface StatusResponse {
@@ -39,4 +52,29 @@ export interface ActionLog {
   rationale: string;
   circleTxRef: string;
   arcTxHash: string;
+  // V2 enhanced logging
+  trigger?: string;
+  policyRule?: string;
+  fromBucket?: string;
+  toBucket?: string;
+  hfBefore?: number;
+  hfAfter?: number;
+  liquidityBefore?: number;
+  liquidityAfter?: number;
+  reserveBefore?: number;
+  reserveAfter?: number;
+}
+
+// V2: Policy response from GET /api/policy
+export interface PolicyResponse {
+  ltvBps: number;
+  minHealthBps: number;
+  emergencyHealthBps: number;
+  liquidityMinUSDC: number;
+  perTxMaxUSDC: number;
+  dailyMaxUSDC: number;
+  liquidityTargetRatio: number;
+  reserveRatio: number;
+  volatilityThresholdPct: number;
+  targetHealthRatio: number;
 }

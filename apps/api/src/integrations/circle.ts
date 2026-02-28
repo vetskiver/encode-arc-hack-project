@@ -5,22 +5,35 @@ let client: AxiosInstance;
 
 const CIRCLE_BASE_URL = "https://api.circle.com/v1/w3s";
 
+// Cached RSA public key from Circle (fetched at init)
+let circlePublicKey: string | null = null;
+
+// Cached wallet blockchain addresses (walletId -> address)
+const walletAddressCache: Record<string, string> = {};
+
+// Explicit simulation mode flag — only true when CIRCLE_SIM_MODE=true
+let simMode = false;
+
+export function isSimMode(): boolean {
+  return simMode;
+}
+
 export function initCircle(): void {
-  const apiKey = process.env.CIRCLE_API_KEY;
-  if (!apiKey) {
-    console.warn("[Circle] Missing CIRCLE_API_KEY, Circle integration will be simulated");
+  const explicitSim = (process.env.CIRCLE_SIM_MODE || "").toLowerCase() === "true";
+  simMode = explicitSim;
+
+  if (explicitSim) {
+    console.warn("[Circle] CIRCLE_SIM_MODE=true — running in simulation mode");
     return;
   }
-  client = axios.create({
-    baseURL: CIRCLE_BASE_URL,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
-  console.log("[Circle] Initialized");
 
-  // Warn if required wallet IDs are missing (we'll fall back to simulation for those transfers)
+  // Real mode: require all critical configuration
+  const apiKey = process.env.CIRCLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("[Circle] Missing CIRCLE_API_KEY. Set CIRCLE_SIM_MODE=true for simulation, or provide credentials.");
+  }
+
+  const missing: string[] = [];
   const required = [
     { key: "CIRCLE_WALLET_LIQUIDITY_ID", label: "liquidity" },
     { key: "CIRCLE_WALLET_RESERVE_ID", label: "reserve" },
@@ -28,14 +41,99 @@ export function initCircle(): void {
   ];
   for (const r of required) {
     if (!process.env[r.key]) {
-      console.warn(`[Circle] Missing ${r.key} (${r.label} wallet) — transfers will simulate for that bucket`);
+      missing.push(`${r.key} (${r.label})`);
     }
   }
   if (!process.env.USDC_TOKEN_ID_OR_ADDRESS) {
-    console.warn("[Circle] Missing USDC_TOKEN_ID_OR_ADDRESS — transfers will simulate");
+    missing.push("USDC_TOKEN_ID_OR_ADDRESS");
   }
   if (!process.env.CIRCLE_ENTITY_SECRET) {
-    console.warn("[Circle] Missing CIRCLE_ENTITY_SECRET — transfers will simulate");
+    missing.push("CIRCLE_ENTITY_SECRET");
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `[Circle] Missing required config for real mode: ${missing.join(", ")}. ` +
+      `Set CIRCLE_SIM_MODE=true for simulation, or provide all credentials.`
+    );
+  }
+
+  client = axios.create({
+    baseURL: CIRCLE_BASE_URL,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+  console.log("[Circle] Initialized in REAL mode");
+
+  // Fetch public key and wallet addresses in background
+  fetchPublicKey().catch((err) =>
+    console.error("[Circle] Failed to fetch public key:", err.message)
+  );
+  resolveWalletAddresses().catch((err) =>
+    console.error("[Circle] Failed to resolve wallet addresses:", err.message)
+  );
+}
+
+/**
+ * Fetch Circle's RSA public key for encrypting entity secret.
+ */
+async function fetchPublicKey(): Promise<void> {
+  if (!client) return;
+  const res = await client.get("/config/entity/publicKey");
+  circlePublicKey = res.data?.data?.publicKey;
+  if (circlePublicKey) {
+    console.log("[Circle] Fetched entity public key");
+  } else {
+    console.warn("[Circle] No public key returned from /config/entity/publicKey");
+  }
+}
+
+/**
+ * Encrypt the entity secret with Circle's RSA public key (RSA-OAEP, SHA-256).
+ * Must produce a fresh ciphertext for every API request.
+ */
+function encryptEntitySecret(): string {
+  const entitySecretHex = process.env.CIRCLE_ENTITY_SECRET || "";
+  if (!circlePublicKey || !entitySecretHex) {
+    throw new Error("Missing Circle public key or entity secret");
+  }
+
+  const entitySecretBuf = Buffer.from(entitySecretHex, "hex");
+  const encrypted = crypto.publicEncrypt(
+    {
+      key: circlePublicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    entitySecretBuf
+  );
+  return encrypted.toString("base64");
+}
+
+/**
+ * Look up the blockchain address for each configured wallet and cache it.
+ */
+async function resolveWalletAddresses(): Promise<void> {
+  if (!client) return;
+  const walletIds = [
+    process.env.CIRCLE_WALLET_LIQUIDITY_ID,
+    process.env.CIRCLE_WALLET_RESERVE_ID,
+    process.env.CIRCLE_WALLET_YIELD_ID,
+    process.env.CIRCLE_WALLET_CREDIT_FACILITY_ID,
+  ].filter(Boolean) as string[];
+
+  for (const wid of walletIds) {
+    try {
+      const res = await client.get(`/wallets/${wid}`);
+      const address = res.data?.data?.wallet?.address;
+      if (address) {
+        walletAddressCache[wid] = address;
+        console.log(`[Circle] Wallet ${wid} -> ${address}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Circle] Could not resolve address for wallet ${wid}:`, err.message);
+    }
   }
 }
 
@@ -66,9 +164,12 @@ const simBalances: Record<BucketName, number> = {
  * Get USDC balance (human-readable number) for a bucket wallet.
  */
 export async function getBalance(bucket: BucketName): Promise<number> {
-  const walletId = getWalletId(bucket);
-  if (!client || !walletId) {
+  if (simMode) {
     return simBalances[bucket];
+  }
+  const walletId = getWalletId(bucket);
+  if (!walletId) {
+    throw new Error(`[Circle] No wallet ID configured for bucket "${bucket}"`);
   }
   try {
     const res = await client.get(`/wallets/${walletId}/balances`);
@@ -78,8 +179,8 @@ export async function getBalance(bucket: BucketName): Promise<number> {
     );
     return usdcBal ? parseFloat(usdcBal.amount) : 0;
   } catch (err: any) {
-    console.error(`[Circle] getBalance(${bucket}) error:`, err.message);
-    return simBalances[bucket];
+    console.error(`[Circle] getBalance(${bucket}) API error (returning 0, NOT sim defaults):`, err.response?.data || err.message);
+    return 0;
   }
 }
 
@@ -98,7 +199,7 @@ export async function transfer(
   const sourceWalletId = getWalletId(fromBucket);
 
   // Determine destination
-  let destinationAddress: string;
+  let destAddress: string;
   let isBucket = false;
   if (
     toBucketOrAddress === "liquidity" ||
@@ -106,19 +207,16 @@ export async function transfer(
     toBucketOrAddress === "yield" ||
     toBucketOrAddress === "creditFacility"
   ) {
-    destinationAddress = getWalletId(toBucketOrAddress as BucketName);
+    const destWalletId = getWalletId(toBucketOrAddress as BucketName);
+    destAddress = walletAddressCache[destWalletId] || "";
     isBucket = true;
   } else {
-    destinationAddress = toBucketOrAddress;
+    destAddress = toBucketOrAddress;
   }
 
-  const entitySecret = process.env.CIRCLE_ENTITY_SECRET || "";
-  const tokenId = process.env.USDC_TOKEN_ID_OR_ADDRESS || "";
-
-  if (!client || !sourceWalletId || !entitySecret || !tokenId) {
-    // Simulation mode
+  if (simMode) {
+    // Simulation mode — only allowed when CIRCLE_SIM_MODE=true
     const ref = `sim-tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    // Update sim balances
     simBalances[fromBucket] = Math.max(0, simBalances[fromBucket] - amountUSDC);
     if (isBucket) {
       simBalances[toBucketOrAddress as BucketName] += amountUSDC;
@@ -129,35 +227,35 @@ export async function transfer(
     return { circleTxRef: ref };
   }
 
-  try {
-    if (!sourceWalletId) {
-      throw new Error(`Missing source walletId for bucket ${fromBucket}`);
-    }
-    if (isBucket && !destinationAddress) {
-      throw new Error(`Missing destination walletId for bucket ${toBucketOrAddress}`);
-    }
-    const idempotencyKey = crypto.randomUUID();
+  // Real mode — all config was validated at init
+  const tokenId = process.env.USDC_TOKEN_ID_OR_ADDRESS || "";
+  if (!circlePublicKey) {
+    throw new Error("[Circle] Public key not yet fetched. Retry after init completes.");
+  }
 
-    const body: any = {
+  try {
+    if (!destAddress) {
+      throw new Error(
+        `Missing destination address for ${toBucketOrAddress}. ` +
+        (isBucket ? "Wallet address not resolved at startup." : "Empty address provided.")
+      );
+    }
+
+    const idempotencyKey = crypto.randomUUID();
+    const entitySecretCiphertext = encryptEntitySecret();
+
+    // Circle W3S flat request body
+    const body: Record<string, unknown> = {
       idempotencyKey,
-      entitySecretCiphertext: entitySecret,
-      source: { type: "wallet", walletId: sourceWalletId, id: sourceWalletId },
-      destination: isBucket && destinationAddress
-        ? { type: "wallet", walletId: destinationAddress, id: destinationAddress }
-        : {
-            type: "blockchain",
-            address: destinationAddress,
-            destinationAddress,
-            chain: "ARC-TESTNET",
-          },
-      // Top-level hints for Circle validation
+      entitySecretCiphertext,
       walletId: sourceWalletId,
-      destinationAddress: isBucket ? undefined : destinationAddress,
       tokenId,
+      destinationAddress: destAddress,
       amounts: [amountUSDC.toFixed(6)],
       feeLevel: "LOW",
     };
 
+    console.log(`[Circle] Sending transfer: ${fromBucket} (${sourceWalletId}) -> ${destAddress}, ${amountUSDC} USDC`);
     const res = await client.post("/developer/transactions/transfer", body);
     const txId = res.data?.data?.id || `circle-${idempotencyKey}`;
     console.log(`[Circle] Transfer ${amountUSDC} USDC: ${fromBucket} -> ${toBucketOrAddress} tx=${txId}`);
@@ -172,7 +270,7 @@ export async function transfer(
  * Create a wallet via Circle API (for initial setup).
  */
 export async function createWallet(name: string): Promise<string> {
-  if (!client) {
+  if (simMode) {
     return `sim-wallet-${name}-${Date.now()}`;
   }
   try {

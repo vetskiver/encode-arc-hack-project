@@ -9,6 +9,8 @@ interface Props {
   emergencyHealthBps?: number;
 }
 
+const HIDE_YIELD = (process.env.NEXT_PUBLIC_HIDE_YIELD || "").toLowerCase() === "true";
+
 function formatCollateralUnits(raw: string, decimals: number): string {
   try {
     const value = BigInt(raw);
@@ -46,9 +48,22 @@ export default function RiskOverview({
   const collateralValueNum = parseFloat(snapshot.collateralValueUSDC);
  
   
-    snapshot.oracleSource === "stork"
-    const sourceLabel = snapshot.oracleSource === "stork" ? "Stork" : "Simulated";
-    const changePctColor = snapshot.changePct >= 0 ? "#10b981" : "#ef4444";
+    const sourceLabel = snapshot.oracleSource === "stork"
+      ? "Stork"
+      : "Simulated";
+  const changePctColor = snapshot.changePct >= 0 ? "#10b981" : "#ef4444";
+  const volatilityPct = snapshot.volatilityPct ? parseFloat(snapshot.volatilityPct) : Math.abs(snapshot.changePct);
+  const volatilityThreshold = snapshot.volatilityThreshold ?? 3;
+  const isVolatile = volatilityPct > volatilityThreshold;
+  const liquidityRatio = snapshot.liquidityRatio ? parseFloat(snapshot.liquidityRatio) : 0;
+  const reserveRatio = snapshot.reserveRatio ? parseFloat(snapshot.reserveRatio) : 0;
+  const liquidityTarget = snapshot.liquidityTargetRatio ?? 0.25;
+  const reserveTarget = snapshot.reserveRatioTarget ?? 0.3;
+  const targetHealth = snapshot.targetHealth ?? 1.6;
+  const safeHeadroom = Math.max(
+    0,
+    targetHealth > 0 ? maxBorrowNum / targetHealth - debtNum : availableBorrow
+  );
 
   const fmt = (n: number) =>
     n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -103,6 +118,11 @@ export default function RiskOverview({
             sub={`$${fmt(availableBorrow)} available`}
           />
           <Metric
+            label="Borrow Now (keeps HF≥target)"
+            value={`$${fmt(safeHeadroom)}`}
+            sub={`Target HF ${targetHealth.toFixed(2)} gate`}
+          />
+          <Metric
             label="Liquidity"
             value={`$${fmt(parseFloat(snapshot.liquidityUSDC))}`}
             sub="Payments & operations"
@@ -111,6 +131,33 @@ export default function RiskOverview({
             label="Reserve"
             value={`$${fmt(parseFloat(snapshot.reserveUSDC))}`}
             sub="Repay buffer"
+          />
+          <Metric
+            label="Liquidity Ratio"
+            value={`${(liquidityRatio * 100).toFixed(1)}%`}
+            sub={`Target ${(liquidityTarget * 100).toFixed(0)}%`}
+          />
+          <Metric
+            label="Reserve Ratio"
+            value={`${(reserveRatio * 100).toFixed(1)}%`}
+            sub={`Target ${(reserveTarget * 100).toFixed(0)}%`}
+          />
+          <Metric
+            label="Volatility"
+            value={`${volatilityPct.toFixed(2)}%`}
+            sub={
+              <>
+                Threshold {volatilityThreshold.toFixed(1)}%
+                {isVolatile && (
+                  <span style={styles.volBadge}>TIGHTENING</span>
+                )}
+              </>
+            }
+          />
+          <Metric
+            label="Target Health"
+            value={`${targetHealth.toFixed(2)}`}
+            sub="Borrow gating threshold"
           />
         </div>
       </div>
@@ -295,5 +342,17 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text)",
     opacity: 0.85,
     lineHeight: 1.4,
+  },
+  volBadge: {
+    marginLeft: 6,
+    padding: "1px 7px",
+    borderRadius: 6,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.8,
+    backgroundColor: "rgba(239,68,68,0.15)",
+    color: "#ef4444",
+    border: "1px solid rgba(239,68,68,0.35)",
+    verticalAlign: "middle",
   },
 };

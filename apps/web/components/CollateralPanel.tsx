@@ -3,7 +3,6 @@ import {
   registerCollateral,
   manualBorrow,
   manualRepay,
-  manualRebalance,
   startAgent,
   stopAgent,
   triggerTick,
@@ -22,9 +21,15 @@ export default function CollateralPanel({ defaultUser, agentEnabled, snapshot }:
   const [collAmount, setCollAmount] = useState("");
   const [borrowAmt, setBorrowAmt] = useState("");
   const [repayAmt, setRepayAmt] = useState("");
-  const [yieldAmt, setYieldAmt] = useState("");
   const [oracleOverride, setOracleOverride] = useState("");
   const [msg, setMsg] = useState("");
+
+  // --- helpers ---
+  const num = (v: string) => parseFloat(v);
+  const toNumber = (s: string | undefined | null) => {
+    const n = s ? parseFloat(s) : NaN;
+    return isNaN(n) ? 0 : n;
+  };
 
   const wrap = async (fn: () => Promise<any>, label: string) => {
     setMsg("");
@@ -124,7 +129,30 @@ export default function CollateralPanel({ defaultUser, agentEnabled, snapshot }:
           <button
             style={styles.btnSecondary}
             onClick={async () => {
-              const ok = await wrap(() => manualBorrow(defaultUser, borrowAmt), "Draw");
+              const debt = toNumber(snapshot?.debtUSDC);
+              const maxBorrow = toNumber(snapshot?.maxBorrowUSDC);
+              const targetHealth = snapshot?.targetHealth ?? 0;
+              const availableLtv = Math.max(0, maxBorrow - debt);
+              const availableHealth =
+                targetHealth > 0 ? Math.max(0, maxBorrow / targetHealth - debt) : availableLtv;
+              const cap = Math.min(availableLtv, availableHealth);
+
+              let amt = num(borrowAmt);
+              if (isNaN(amt) || amt <= 0) {
+                setMsg("Draw: enter a positive number");
+                return;
+              }
+              if (cap <= 0) {
+                setMsg("Draw: no headroom to borrow safely");
+                return;
+              }
+              if (amt > cap) {
+                amt = cap;
+                setBorrowAmt(cap.toFixed(6));
+                setMsg(`Draw capped to $${cap.toFixed(2)} (max allowed)`);
+              }
+
+              const ok = await wrap(() => manualBorrow(defaultUser, amt.toString()), "Draw");
               if (ok) setBorrowAmt("");
             }}
           >
@@ -139,48 +167,23 @@ export default function CollateralPanel({ defaultUser, agentEnabled, snapshot }:
           <button
             style={styles.btnSecondary}
             onClick={async () => {
+              const repayNum = parseFloat(repayAmt);
+              const currentDebt = snapshot ? parseFloat(snapshot.debtUSDC || "0") : 0;
+              if (isNaN(repayNum) || repayNum <= 0) {
+                setMsg("Repay: enter a positive number");
+                return;
+              }
+              if (repayNum > currentDebt) {
+                const capped = currentDebt;
+                setRepayAmt(capped.toFixed(6));
+                setMsg(`Repay capped to current debt ($${currentDebt.toFixed(2)})`);
+                return; // wait for user to click again or adjust automatically? Keep auto-cap and stop action.
+              }
               const ok = await wrap(() => manualRepay(defaultUser, repayAmt), "Repay");
               if (ok) setRepayAmt("");
             }}
           >
             Repay
-          </button>
-        </div>
-      </div>
-
-      {/* ── Yield Rebalance ── */}
-      <div style={styles.section}>
-        <span style={styles.label}>Yield Rebalance (Manual)</span>
-        <div style={styles.row}>
-          <input
-            style={styles.input}
-            placeholder="Amount USDC"
-            value={yieldAmt}
-            onChange={(e) => setYieldAmt(e.target.value)}
-          />
-          <button
-            style={styles.btnSecondary}
-            onClick={async () => {
-              const ok = await wrap(
-                () => manualRebalance(defaultUser, "liquidity", "yield", yieldAmt),
-                "Move to Yield"
-              );
-              if (ok) setYieldAmt("");
-            }}
-          >
-            Move to Yield
-          </button>
-          <button
-            style={styles.btnSecondary}
-            onClick={async () => {
-              const ok = await wrap(
-                () => manualRebalance(defaultUser, "yield", "liquidity", yieldAmt),
-                "Move to Liquidity"
-              );
-              if (ok) setYieldAmt("");
-            }}
-          >
-            Move to Liquidity
           </button>
         </div>
       </div>

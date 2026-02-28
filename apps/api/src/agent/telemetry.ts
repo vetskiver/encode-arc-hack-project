@@ -1,21 +1,21 @@
 import { store } from "../store";
 
 export function setStatus(status: "Monitoring" | "Executing" | "Risk Mode"): void {
-  store.telemetry.status = status;
+  store.updateTelemetry({ status });
 }
 
 export function setLastReason(reason: string): void {
-  store.telemetry.lastReason = reason;
+  store.updateTelemetry({ lastReason: reason });
 }
 
 export function setNextTickAt(ts: number): void {
-  store.telemetry.nextTickAt = ts;
+  store.updateTelemetry({ nextTickAt: ts });
 }
 
 export function setAgentEnabled(enabled: boolean): void {
-  store.telemetry.agentEnabled = enabled;
+  store.updateTelemetry({ agentEnabled: enabled });
 }
 
 export function setLastSnapshot(snapshot: any): void {
-  store.telemetry.lastSnapshot = snapshot;
+  store.updateTelemetry({ lastSnapshot: snapshot });
 }

@@ -1,6 +1,7 @@
 import * as arc from "../integrations/arc";
 import * as circle from "../integrations/circle";
 import * as stork from "../integrations/stork";
+import { getYieldRate } from "../integrations/yield";
 import { store } from "../store";
 import { planner } from "./planner";
 import { safetyController, Snapshot } from "./safetyController";
@@ -52,6 +53,9 @@ export async function agentTick(user: string): Promise<void> {
     const reserveUSDC = await circle.getBalance("reserve");
     const yieldUSDC = await circle.getBalance("yield");
 
+    // 3b. Read yield rate feed (env-driven, with light drift)
+    const yieldData = await getYieldRate();
+
     // 4. Compute snapshot metrics
     const collateralValueUSDC = computeCollateralValueUSDC(
       userState.collateralAmount,
@@ -62,18 +66,26 @@ export async function agentTick(user: string): Promise<void> {
 
     const pending = store.getPendingPayment();
 
+    // --- V2 policy extensions from env (keep defaults if unset/onchain lacks) ---
+    const liquidityTargetRatio = parseFloat(process.env.LIQUIDITY_TARGET_RATIO || "0.25"); // 25% default
+    const reserveRatio = parseFloat(process.env.RESERVE_RATIO || "0.30"); // 30% default of total USDC
+    const targetHealthRatio = parseFloat(process.env.TARGET_HEALTH || "1.6"); // above minHealth
+    const volatilityThresholdPct = parseFloat(process.env.VOL_THRESHOLD_PCT || "3"); // reuse existing as default
+    const maxYieldAllocPct = parseFloat(process.env.MAX_YIELD_ALLOC_PCT || "0.35"); // 35% cap by default
+    const minTargetYieldPct = parseFloat(process.env.MIN_TARGET_YIELD_PCT || "3"); // only deploy if APY >= 3%
+
     // Normalize policy values: contract stores with 6 decimals, planner/safety need floats
     // liquidityMinUSDC, perTxMaxUSDC, dailyMaxUSDC come from contract as raw bigint-ish numbers
     // If they're 0 (policy not set), use sensible defaults so agent has real constraints to work with
     const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0
       ? Number(policy.liquidityMinUSDC)
-      : 500 * 1e6; // default: 500 USDC min liquidity
+      : 5 * 1e6; // default: 5 USDC min liquidity (testnet-friendly)
     const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0
       ? Number(policy.perTxMaxUSDC)
-      : 10_000 * 1e6; // default: 10k per tx
+      : 10 * 1e6; // default: 10 USDC per tx (testnet-friendly)
     const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0
       ? Number(policy.dailyMaxUSDC)
-      : 50_000 * 1e6; // default: 50k daily
+      : 50 * 1e6; // default: 50 USDC daily
 
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,
@@ -99,7 +111,22 @@ export async function agentTick(user: string): Promise<void> {
         liquidityMinUSDC,
         perTxMaxUSDC,
         dailyMaxUSDC,
+        liquidityTargetRatio,
+        reserveRatio,
+        volatilityThresholdPct,
+        targetHealthRatio,
+        maxYieldAllocPct,
+        minTargetYieldPct,
       },
+      totalUSDC: liquidityUSDC + reserveUSDC + yieldUSDC,
+      liquidityRatio: (liquidityUSDC + reserveUSDC + yieldUSDC) > 0
+        ? liquidityUSDC / (liquidityUSDC + reserveUSDC + yieldUSDC)
+        : 0,
+      reserveRatio: (liquidityUSDC + reserveUSDC + yieldUSDC) > 0
+        ? reserveUSDC / (liquidityUSDC + reserveUSDC + yieldUSDC)
+        : 0,
+      volatilityPct: Math.abs(changePct),
+      yieldRatePct: yieldData.ratePct,
     };
 
     setLastSnapshot({
@@ -119,7 +146,19 @@ export async function agentTick(user: string): Promise<void> {
       pendingPayment: pending
         ? { to: pending.to, amountUSDC: pending.amountUSDC }
         : null,
-    });
+      liquidityRatio: snapshot.liquidityRatio.toFixed(4),
+          reserveRatio: snapshot.reserveRatio.toFixed(4),
+          volatilityPct: snapshot.volatilityPct.toFixed(2),
+          targetHealth: targetHealthRatio,
+          liquidityTargetRatio,
+          reserveRatioTarget: reserveRatio,
+          maxYieldAllocPct,
+          minTargetYieldPct,
+          yieldRatePct: yieldData.ratePct,
+          yieldRateStale: yieldData.stale,
+          // V2: surface volatility threshold to frontend
+          volatilityThreshold: volatilityThresholdPct,
+        });
 
     // 5. Planner proposes plan
     const proposal = planner(snapshot);
@@ -157,7 +196,7 @@ export async function agentTick(user: string): Promise<void> {
 
     // 7. Execute actions sequentially
     for (const action of safetyResult.plan.actions) {
-      console.log(`[AgentTick] Executing ${action.type}: ${action.amountUSDC} USDC`);
+      console.log(`[AgentTick] Executing ${action.type}: ${action.amountUSDC} USDC (trigger: ${action.trigger || "-"}, rule: ${action.policyRule || "-"})`);
       await executeAction(action, snapshot, user);
 
       if (action.type === "payment" && pending) {
@@ -165,7 +204,64 @@ export async function agentTick(user: string): Promise<void> {
       }
     }
 
-    // 8. Update telemetry
+    // 8. V2: Post-execution snapshot refresh for delta logging
+    if (safetyResult.plan.actions.length > 0) {
+      try {
+        const postLiquidity = await circle.getBalance("liquidity");
+        const postReserve = await circle.getBalance("reserve");
+        const postYield = await circle.getBalance("yield");
+        const postUserState = await arc.getUserState(user);
+        const postCollateralValue = computeCollateralValueUSDC(postUserState.collateralAmount, priceBigInt);
+        const postMaxBorrow = computeMaxBorrow(postCollateralValue, policy.ltvBps);
+        const postHF = computeHealthFactor(postMaxBorrow, postUserState.debtUSDC);
+        const postTotal = postLiquidity + postReserve + postYield;
+
+        // Update the most recent action logs with post-execution state
+        const recentLogs = store.actionLogs.slice(0, safetyResult.plan.actions.length);
+        for (const log of recentLogs) {
+          log.hfAfter = postHF;
+          log.liquidityAfter = postLiquidity;
+          log.reserveAfter = postReserve;
+        }
+
+        // Update telemetry snapshot with post-execution values
+        setLastSnapshot({
+          oraclePrice: oracle.price,
+          oracleTs: oracle.ts,
+          oracleStale: oracle.stale,
+          oracleSource: oracle.source,
+          changePct,
+          collateralAmount: postUserState.collateralAmount.toString(),
+          collateralValueUSDC: formatUSDC(postCollateralValue),
+          debtUSDC: formatUSDC(postUserState.debtUSDC),
+          maxBorrowUSDC: formatUSDC(postMaxBorrow),
+          healthFactor: postHF,
+          liquidityUSDC: postLiquidity.toFixed(6),
+          reserveUSDC: postReserve.toFixed(6),
+          yieldUSDC: postYield.toFixed(6),
+          pendingPayment: store.getPendingPayment()
+            ? { to: store.getPendingPayment()!.to, amountUSDC: store.getPendingPayment()!.amountUSDC }
+            : null,
+          liquidityRatio: postTotal > 0 ? (postLiquidity / postTotal).toFixed(4) : "0",
+          reserveRatio: postTotal > 0 ? (postReserve / postTotal).toFixed(4) : "0",
+          volatilityPct: snapshot.volatilityPct.toFixed(2),
+          targetHealth: targetHealthRatio,
+          liquidityTargetRatio,
+          reserveRatioTarget: reserveRatio,
+          maxYieldAllocPct,
+          minTargetYieldPct,
+          yieldRatePct: yieldData.ratePct,
+          yieldRateStale: yieldData.stale,
+          volatilityThreshold: volatilityThresholdPct,
+        });
+
+        console.log(`[AgentTick] Post-execution: HF ${healthFactor.toFixed(2)} -> ${postHF.toFixed(2)}, liquidity ${liquidityUSDC.toFixed(2)} -> ${postLiquidity.toFixed(2)}, reserve ${reserveUSDC.toFixed(2)} -> ${postReserve.toFixed(2)}`);
+      } catch (postErr: any) {
+        console.warn("[AgentTick] Post-execution snapshot failed (non-fatal):", postErr.message);
+      }
+    }
+
+    // 9. Update telemetry
     const volThreshold = parseFloat(process.env.VOL_THRESHOLD_PCT || "3");
     const isRisk =
       healthFactor < bpsToRatio(policy.minHealthBps) ||
