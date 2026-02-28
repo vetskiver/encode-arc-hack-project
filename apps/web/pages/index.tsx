@@ -8,6 +8,9 @@ import PlatformActivityFeed from "../components/PlatformActivityFeed";
 import SidebarNav from "../components/Sidebar";
 
 const POLL_INTERVAL = 3000;
+const SIDEBAR_W = 270;
+const SIDEBAR_W_COLLAPSED = 74;
+const SIDEBAR_MARGIN = 28;
 
 const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
 
@@ -21,6 +24,8 @@ export default function Home() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const leftPad = (sidebarCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W) + SIDEBAR_MARGIN;
 
   const refresh = useCallback(async () => {
     try {
@@ -42,8 +47,9 @@ export default function Home() {
   }, [refresh]);
 
   return (
-  <div style={{ ...styles.page, paddingLeft: 240 }}>
-    <SidebarNav />
+  <div style={{ ...styles.page, paddingLeft: leftPad }}>
+    
+    <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />
 
