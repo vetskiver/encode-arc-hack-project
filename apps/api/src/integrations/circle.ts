@@ -135,12 +135,13 @@ export async function transfer(
     const body: any = {
       idempotencyKey,
       entitySecretCiphertext: entitySecret,
-      source: { type: "wallet", id: sourceWalletId },
+      source: { type: "wallet", id: sourceWalletId, walletId: sourceWalletId },
       destination: isBucket && destinationAddress
-        ? { type: "wallet", id: destinationAddress }
+        ? { type: "wallet", id: destinationAddress, walletId: destinationAddress }
         : {
             type: "blockchain",
             address: destinationAddress,
+            destinationAddress,
             chain: "ARC-TESTNET",
           },
       tokenId,
