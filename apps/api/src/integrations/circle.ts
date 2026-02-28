@@ -130,6 +130,12 @@ export async function transfer(
   }
 
   try {
+    if (!sourceWalletId) {
+      throw new Error(`Missing source walletId for bucket ${fromBucket}`);
+    }
+    if (isBucket && !destinationAddress) {
+      throw new Error(`Missing destination walletId for bucket ${toBucketOrAddress}`);
+    }
     const idempotencyKey = crypto.randomUUID();
 
     const body: any = {
