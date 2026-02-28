@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from "axios";
+import crypto from "node:crypto";
 
 let client: AxiosInstance;
 
@@ -32,6 +33,9 @@ export function initCircle(): void {
   }
   if (!process.env.USDC_TOKEN_ID_OR_ADDRESS) {
     console.warn("[Circle] Missing USDC_TOKEN_ID_OR_ADDRESS — transfers will simulate");
+  }
+  if (!process.env.CIRCLE_ENTITY_SECRET) {
+    console.warn("[Circle] Missing CIRCLE_ENTITY_SECRET — transfers will simulate");
   }
 }
 
@@ -108,7 +112,10 @@ export async function transfer(
     destinationAddress = toBucketOrAddress;
   }
 
-  if (!client || !sourceWalletId) {
+  const entitySecret = process.env.CIRCLE_ENTITY_SECRET || "";
+  const tokenId = process.env.USDC_TOKEN_ID_OR_ADDRESS || "";
+
+  if (!client || !sourceWalletId || !entitySecret || !tokenId) {
     // Simulation mode
     const ref = `sim-tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // Update sim balances
@@ -123,25 +130,23 @@ export async function transfer(
   }
 
   try {
-    const tokenId = process.env.USDC_TOKEN_ID_OR_ADDRESS || "";
-    const idempotencyKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const idempotencyKey = crypto.randomUUID();
 
     const body: any = {
       idempotencyKey,
+      entitySecretCiphertext: entitySecret,
       source: { type: "wallet", id: sourceWalletId },
-      amount: { amount: amountUSDC.toFixed(6), currency: "USD" },
+      destination: isBucket && destinationAddress
+        ? { type: "wallet", id: destinationAddress }
+        : {
+            type: "blockchain",
+            address: destinationAddress,
+            chain: "ARC-TESTNET",
+          },
       tokenId,
+      amounts: [{ amount: amountUSDC.toFixed(6), tokenId }],
+      feeLevel: "LOW",
     };
-
-    if (isBucket && destinationAddress) {
-      body.destination = { type: "wallet", id: destinationAddress };
-    } else {
-      body.destination = {
-        type: "blockchain",
-        address: destinationAddress,
-        chain: "ARC",
-      };
-    }
 
     const res = await client.post("/developer/transactions/transfer", body);
     const txId = res.data?.data?.id || `circle-${idempotencyKey}`;

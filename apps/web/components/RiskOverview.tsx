@@ -42,7 +42,12 @@ export default function RiskOverview({
   const availableBorrow = Math.max(0, maxBorrowNum - debtNum);
   const collateralUnits = formatCollateralUnits(snapshot.collateralAmount, 2);
   const collateralValueNum = parseFloat(snapshot.collateralValueUSDC);
-  const sourceLabel = snapshot.oracleSource === "stork" ? "Stork" : "Simulated";
+  const sourceLabel =
+    snapshot.oracleSource === "stork"
+      ? "Stork"
+      : snapshot.oracleSource === "gecko"
+        ? "Gecko"
+        : "Simulated";
   const changePctColor = snapshot.changePct >= 0 ? "#10b981" : "#ef4444";
 
   const fmt = (n: number) =>

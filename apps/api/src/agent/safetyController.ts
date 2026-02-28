@@ -4,7 +4,7 @@ export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
   oracleStale: boolean;
-  oracleSource?: "stork" | "sim";
+  oracleSource?: "stork" | "gecko" | "sim";
   changePct: number;
   collateralAmount: bigint;
   collateralValueUSDC: bigint;
@@ -54,7 +54,8 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
   const emergencyHealth = bpsToRatio(snapshot.policy.emergencyHealthBps);
   const hf = snapshot.healthFactor;
   const changePctAbs = Math.abs(snapshot.changePct);
-  const oracleUntrusted = snapshot.oracleStale || snapshot.oracleSource === "sim";
+  const oracleTrusted = !snapshot.oracleStale && snapshot.oracleSource !== "sim";
+  const oracleUntrusted = !oracleTrusted;
 
   // Convert 6-decimal policy values to dollar floats for comparison
   const perTxMax = snapshot.policy.perTxMaxUSDC / 1e6;
