@@ -79,6 +79,7 @@ Offchain (Backend):
 (c) Repay USDC
 1) Backend executes Circle transfer: Reserve/Liquidity -> CreditFacilityWallet (USDC)
 2) Backend records on Arc: recordRepay(amount, circleTxRef) + logDecision
+ 3) HF improves and planner/safety reevaluate actions
 
 (d) Execute payment
 1) UI -> POST /api/payment/request (queues pending payment)
@@ -96,6 +97,22 @@ Offchain (Backend):
 7) Execute Circle transfers
 8) Record results on Arc
 9) Update telemetry (status, lastReason, nextTickAt)
+
+## Vision & UX Narrative (What we’re building)
+
+We are building a programmable RWA-backed credit infrastructure presented through a clean institutional treasury interface. The system should feel like real fintech infrastructure, not a hackathon toy. It is an autonomous credit engine that lets a company borrow USDC against tokenized RWA collateral (V1: simulated Treasuries). The agent continuously monitors collateral via Stork, enforces LTV, calculates health factor, and automatically borrows or repays. All USDC movement is through Circle Wallets; all state transitions are logged via Arc.
+
+UI information architecture (two levels):
+- Platform overview: shows total platform liquidity, outstanding credit, aggregate collateral, global status, oracle source/freshness, and a countdown to next agent evaluation—conveys autonomous infrastructure managing capital at scale.
+- Company cards: each company agent shows collateral value, debt, HF (color-coded), liquidity/reserve balances, and agent status (Monitoring / Executing / Risk Mode / Emergency). This makes it obvious which company is safe or stressed.
+- Company detail (agent cockpit): core metrics (collateral, debt, max/available borrow, HF), agent status, next-tick countdown, and Last Decision Reason (e.g., “Collateral -6.2%. Repaid 18,400 USDC to restore HF to 1.40.”) to prove determinism. Treasury buckets (liquidity, reserve, yield) update visibly when actions fire. Policy parameters (LTV, min HF, emergency HF, liquidity buffer) and oracle data (price, source, stale, volatility) are shown to reinforce signal-driven automation. Action log lists every borrow/repay/rebalance with time, amount, HF, oracle source, Circle tx ref, and Arc tx/event hash—evidence of real settlement and onchain logging.
+
+Demo moment: A “Simulate Market Shock” can drop price to show the agent flip to Risk Mode, execute a repay, and update logs live. This demonstrates oracle-driven autonomy and enforced credit constraints.
+
+What the UI must communicate:
+1) We manage real capital (Circle transfers, Arc logs, USDC gas on Arc).
+2) The agent acts autonomously from oracle signals.
+3) Credit constraints are programmable and enforced (LTV, HF, policy limits).
 
 ### Secrets / Key Handling (Dev)
 - Backend-only env vars (.env.local, gitignored):
