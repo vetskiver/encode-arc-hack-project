@@ -59,7 +59,10 @@ export default function Home() {
       )}
       <div style={styles.content}>
         <div style={styles.mainCol}>
-          <RiskOverview snapshot={status?.snapshot || null} />
+          <RiskOverview 
+            snapshot={status?.snapshot || null}
+            lastReason={status?.lastReason}
+             />
           <TreasuryBuckets snapshot={status?.snapshot || null} />
           <ActionLogTable logs={logs} />
         </div>
