@@ -34,8 +34,9 @@ export default function RiskOverview({
         <p style={styles.muted}>No data yet. Run the agent or wait for a tick.</p>
       </div>
     );
-  }
+  } 
 
+  const isStale = Date.now() - snapshot.oracleTs > 60_000;
   const debtNum = parseFloat(snapshot.debtUSDC);
   const maxBorrowNum = parseFloat(snapshot.maxBorrowUSDC);
   const availableBorrow = Math.max(0, maxBorrowNum - debtNum);
@@ -76,6 +77,9 @@ export default function RiskOverview({
                 {new Date(snapshot.oracleTs).toLocaleTimeString()}
                 {" · "}
                 {sourceLabel}
+                {isStale && (
+                  <span style={styles.staleBadge}>⚠ STALE</span>
+                )}
               </>
             }
           />
@@ -92,6 +96,16 @@ export default function RiskOverview({
             label="Max Borrow"
             value={`$${fmt(maxBorrowNum)}`}
             sub={`$${fmt(availableBorrow)} available`}
+          />
+          <Metric
+            label="Liquidity"
+            value={`$${fmt(parseFloat(snapshot.liquidityUSDC))}`}
+            sub="Payments & operations"
+          />
+          <Metric
+            label="Reserve"
+            value={`$${fmt(parseFloat(snapshot.reserveUSDC))}`}
+            sub="Repay buffer"
           />
         </div>
       </div>
@@ -196,5 +210,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "monospace",
     fontSize: 12,
     opacity: 0.8,
+  },
+  staleBadge: {
+  marginLeft: 6,
+  padding: "1px 7px",
+  borderRadius: 6,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: 0.8,
+  backgroundColor: "rgba(245,158,11,0.15)",
+  color: "#f59e0b",
+  border: "1px solid rgba(245,158,11,0.35)",
+  verticalAlign: "middle",
   },
 };
