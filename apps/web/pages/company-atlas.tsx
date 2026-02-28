@@ -15,7 +15,7 @@ import PlatformOverview from "../components/PlatformOverview";
 const POLL_INTERVAL = 3000;
 const SIDEBAR_W = 270;
 const SIDEBAR_W_COLLAPSED = 74;
-const SIDEBAR_MARGIN = 28;
+const SIDEBAR_MARGIN = 0;
 
 const COMPANY = {
   name: "Atlas Manufacturing",

@@ -34,7 +34,7 @@ export default function SidebarNav({ collapsed, onCollapsedChange }: SidebarProp
       <div className="top">
         <div className="brand">
 
-          {!collapsed && <img src="/horizn_logo.svg" alt="Horizn" className="logo" />}
+          {!collapsed && <img src="horizn_logo_w.svg" alt="Horizn" className="logo" style={{ width: 200, height: "auto" }} />}
         </div>
 
         <button
@@ -111,13 +111,14 @@ export default function SidebarNav({ collapsed, onCollapsedChange }: SidebarProp
           height: 100vh;
           width: ${SIDEBAR_W}px;
           padding: 14px;
-          border-radius: 24px;
-          margin: 14px;
+          border-radius: 0 24px 24px 0;
+          margin: 0;
           background: rgba(2, 6, 23, 0.65);
           border: 1px solid rgba(148, 163, 184, 0.14);
           backdrop-filter: blur(10px);
           z-index: 50;
           transition: width 180ms ease;
+          overflow-y: auto;
         }
         .sidebar.collapsed {
           width: ${SIDEBAR_W_COLLAPSED}px;

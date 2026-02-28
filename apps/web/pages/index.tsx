@@ -14,6 +14,8 @@ const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
 const SIDEBAR_W = 240;
 const SIDEBAR_W_COLLAPSED = 72;
 const SIDEBAR_MARGIN = 16;
+const OFFSET_EXPANDED = SIDEBAR_W + SIDEBAR_MARGIN * 2;
+const OFFSET_COLLAPSED = SIDEBAR_W_COLLAPSED + SIDEBAR_MARGIN
 
 const COMPANIES = [
   { name: "Atlas Manufacturing", address: "0x0000000000000000000000000000000000000001" },
@@ -26,7 +28,7 @@ export default function Home() {
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const leftPad = (sidebarCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W) + SIDEBAR_MARGIN;
+  const leftPad = sidebarCollapsed ? 74 : 270;
 
   const refresh = useCallback(async () => {
     try {
@@ -51,6 +53,13 @@ export default function Home() {
   <div style={{ ...styles.page, paddingLeft: leftPad }}>
     
     <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
+    <main
+      style={{
+        transition: "margin-left 180ms ease",
+      }}
+    />
+    
+    
     <HeaderStatusBar status={status} />
     <PlatformOverview status={status} />
 
@@ -78,7 +87,7 @@ export default function Home() {
           ))}
         </div>
       </div>
-
+      
 
       <PlatformActivityFeed logs={logs} />
 

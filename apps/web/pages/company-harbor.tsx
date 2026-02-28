@@ -15,7 +15,7 @@ import PlatformOverview from "../components/PlatformOverview";
 const POLL_INTERVAL = 3000;
 const SIDEBAR_W = 270;
 const SIDEBAR_W_COLLAPSED = 74;
-const SIDEBAR_MARGIN = 28;
+const SIDEBAR_MARGIN = 0;
 
 const COMPANY = {
   name: "Harbor Health Systems",
@@ -27,7 +27,7 @@ export default function CompanyHarborPage() {
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const leftPad = (sidebarCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W) + SIDEBAR_MARGIN;
+  const leftPad = sidebarCollapsed ? 74 : 270;
 
   const refresh = useCallback(async () => {
     try {
