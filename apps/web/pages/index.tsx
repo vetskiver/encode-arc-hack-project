@@ -10,27 +10,12 @@ import { StatusResponse, ActionLog } from "../lib/types";
 
 const POLL_INTERVAL = 3000;
 
-const COMPANIES = [
-  {
-    name: "Atlas Manufacturing",
-    address: "0x0000000000000000000000000000000000000001",
-  },
-  {
-    name: "Northwind Logistics",
-    address: "0x0000000000000000000000000000000000000002",
-  },
-  {
-    name: "Harbor Health Systems",
-    address: "0x0000000000000000000000000000000000000003",
-  },
-];
+const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
 
 export default function Home() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
-  const [companyIndex, setCompanyIndex] = useState(0);
-  const [companyAddress, setCompanyAddress] = useState(COMPANIES[0].address);
 
   const refresh = useCallback(async () => {
     try {
@@ -64,38 +49,12 @@ export default function Home() {
           <ActionLogTable logs={logs} />
         </div>
         <div style={styles.sideCol}>
-          <div style={styles.card}>
-            <h3 style={styles.cardHeading}>Company</h3>
-            <label style={styles.label}>Select Company</label>
-            <select
-              style={styles.select}
-              value={companyIndex}
-              onChange={(e) => {
-                const idx = Number(e.target.value);
-                setCompanyIndex(idx);
-                setCompanyAddress(COMPANIES[idx].address);
-              }}
-            >
-              {COMPANIES.map((c, idx) => (
-                <option key={c.name} value={idx}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <label style={styles.label}>Company Wallet</label>
-            <input
-              style={styles.input}
-              value={companyAddress}
-              onChange={(e) => setCompanyAddress(e.target.value)}
-              placeholder="0x..."
-            />
-          </div>
           <CollateralPanel
-            defaultUser={companyAddress}
+            defaultUser={DEFAULT_USER}
             agentEnabled={status?.agentEnabled || false}
             snapshot={status?.snapshot || null}
           />
-          <PaymentRequestForm defaultUser={companyAddress} />
+          <PaymentRequestForm defaultUser={DEFAULT_USER} />
         </div>
       </div>
     </div>
@@ -153,30 +112,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
     fontWeight: 700,
     letterSpacing: 0.2,
-  },
-  label: {
-    fontSize: 12,
-    color: "var(--muted)",
-    textTransform: "uppercase" as const,
-    display: "block",
-    marginBottom: 6,
-    letterSpacing: 0.8,
-  },
-  select: {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: 10,
-    border: "1px solid var(--border)",
-    backgroundColor: "var(--surface)",
-    color: "var(--text)",
-    marginBottom: 12,
-  },
-  input: {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: 10,
-    border: "1px solid var(--border)",
-    backgroundColor: "var(--surface)",
-    color: "var(--text)",
   },
 };
