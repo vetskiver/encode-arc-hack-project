@@ -3,6 +3,7 @@ import { bpsToRatio } from "../utils/math";
 export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
+  oracleSource?: "stork" | "sim";
   changePct: number;
   collateralAmount: bigint;
   collateralValueUSDC: bigint;

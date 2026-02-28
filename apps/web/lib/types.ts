@@ -1,6 +1,7 @@
 export interface Snapshot {
   oraclePrice: number;
   oracleTs: number;
+  oracleSource?: "stork" | "sim";
   changePct: number;
   collateralAmount: string;
   collateralValueUSDC: string;
@@ -9,6 +10,7 @@ export interface Snapshot {
   healthFactor: number;
   liquidityUSDC: string;
   reserveUSDC: string;
+  yieldUSDC: string;
   pendingPayment: { to: string; amountUSDC: string } | null;
 }
 
@@ -25,6 +27,7 @@ export interface OracleResponse {
   ts: number;
   changePct: number;
   stale: boolean;
+  source?: "stork" | "sim";
 }
 
 export interface ActionLog {

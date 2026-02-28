@@ -3,6 +3,7 @@ import {
   registerCollateral,
   manualBorrow,
   manualRepay,
+  manualRebalance,
   startAgent,
   stopAgent,
   triggerTick,
@@ -19,6 +20,7 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
   const [collAmount, setCollAmount] = useState("");
   const [borrowAmt, setBorrowAmt] = useState("");
   const [repayAmt, setRepayAmt] = useState("");
+  const [yieldAmt, setYieldAmt] = useState("");
   const [oracleOverride, setOracleOverride] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -94,6 +96,42 @@ export default function CollateralPanel({ defaultUser, agentEnabled }: Props) {
             }}
           >
             Repay
+          </button>
+        </div>
+      </div>
+
+      <div style={styles.section}>
+        <span style={styles.label}>Yield Rebalance (Manual)</span>
+        <div style={styles.row}>
+          <input
+            style={styles.input}
+            placeholder="Amount USDC"
+            value={yieldAmt}
+            onChange={(e) => setYieldAmt(e.target.value)}
+          />
+          <button
+            style={styles.btnSecondary}
+            onClick={async () => {
+              const ok = await wrap(
+                () => manualRebalance(defaultUser, "liquidity", "yield", yieldAmt),
+                "Move to Yield"
+              );
+              if (ok) setYieldAmt("");
+            }}
+          >
+            Move to Yield
+          </button>
+          <button
+            style={styles.btnSecondary}
+            onClick={async () => {
+              const ok = await wrap(
+                () => manualRebalance(defaultUser, "yield", "liquidity", yieldAmt),
+                "Move to Liquidity"
+              );
+              if (ok) setYieldAmt("");
+            }}
+          >
+            Move to Liquidity
           </button>
         </div>
       </div>

@@ -64,6 +64,18 @@ export function manualRepay(user: string, amountUSDC: string) {
   });
 }
 
+export function manualRebalance(
+  user: string,
+  fromBucket: string,
+  toBucket: string,
+  amountUSDC: string
+) {
+  return fetchJSON<any>("/api/manual/rebalance", {
+    method: "POST",
+    body: JSON.stringify({ user, fromBucket, toBucket, amountUSDC }),
+  });
+}
+
 export function overrideOraclePrice(price: number) {
   return fetchJSON<any>("/api/oracle/override", {
     method: "POST",

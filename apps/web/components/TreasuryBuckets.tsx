@@ -8,6 +8,7 @@ interface Props {
 export default function TreasuryBuckets({ snapshot }: Props) {
   const liquidity = snapshot ? parseFloat(snapshot.liquidityUSDC) : 0;
   const reserve = snapshot ? parseFloat(snapshot.reserveUSDC) : 0;
+  const yieldBal = snapshot ? parseFloat(snapshot.yieldUSDC || "0") : 0;
 
   return (
     <div style={{ ...styles.card, animationDelay: "0.1s" }}>
@@ -25,8 +26,8 @@ export default function TreasuryBuckets({ snapshot }: Props) {
         </div>
         <div style={styles.bucket}>
           <div style={styles.bucketName}>Yield</div>
-          <div style={styles.bucketValue}>—</div>
-          <div style={styles.bucketSub}>V1 placeholder</div>
+          <div style={styles.bucketValue}>${yieldBal.toLocaleString()}</div>
+          <div style={styles.bucketSub}>Yield allocation</div>
         </div>
         <div style={styles.bucket}>
           <div style={styles.bucketName}>Credit Facility</div>

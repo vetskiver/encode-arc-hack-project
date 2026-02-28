@@ -62,6 +62,7 @@ export async function agentTick(user: string): Promise<void> {
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,
       oracleTs: oracle.ts,
+      oracleSource: oracle.source,
       changePct,
       collateralAmount: userState.collateralAmount,
       collateralValueUSDC,
@@ -87,6 +88,7 @@ export async function agentTick(user: string): Promise<void> {
     setLastSnapshot({
       oraclePrice: oracle.price,
       oracleTs: oracle.ts,
+      oracleSource: oracle.source,
       changePct,
       collateralAmount: userState.collateralAmount.toString(),
       collateralValueUSDC: formatUSDC(collateralValueUSDC),
@@ -95,6 +97,7 @@ export async function agentTick(user: string): Promise<void> {
       healthFactor,
       liquidityUSDC: liquidityUSDC.toFixed(6),
       reserveUSDC: reserveUSDC.toFixed(6),
+      yieldUSDC: yieldUSDC.toFixed(6),
       pendingPayment: pending
         ? { to: pending.to, amountUSDC: pending.amountUSDC }
         : null,

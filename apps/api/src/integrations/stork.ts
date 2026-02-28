@@ -2,6 +2,7 @@ import axios from "axios";
 
 const STORK_BASE_URL = "https://rest.jp.stork-oracle.network";
 const FRESHNESS_THRESHOLD_MS = 120_000; // 2 minutes
+const CACHE_TTL_MS = 15_000; // 15 seconds
 
 let apiKey: string = "";
 let assetSymbol: string = "";
@@ -20,11 +21,23 @@ export interface OracleData {
   price: number;
   ts: number;
   stale: boolean;
+  source: "stork" | "sim";
 }
 
 // Simulated price for when Stork is not configured
 let simPrice = 100.0;
 let simTs = Date.now();
+
+type CacheEntry = {
+  data: OracleData;
+  fetchedAt: number;
+};
+
+const cacheByAsset: Record<string, CacheEntry | undefined> = {};
+
+function isStale(ts: number): boolean {
+  return Date.now() - ts > FRESHNESS_THRESHOLD_MS;
+}
 
 export function setSimulatedPrice(price: number): void {
   simPrice = price;
@@ -37,13 +50,23 @@ export async function getPrice(): Promise<OracleData> {
     return {
       price: simPrice,
       ts: simTs,
-      stale: false,
+      stale: true,
+      source: "sim",
+    };
+  }
+
+  const symbol = assetSymbol;
+  const cached = cacheByAsset[symbol];
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return {
+      ...cached.data,
+      stale: isStale(cached.data.ts),
     };
   }
 
   try {
     const res = await axios.get(
-      `${STORK_BASE_URL}/v1/prices/latest?assets=${assetSymbol}`,
+      `${STORK_BASE_URL}/v1/prices/latest?assets=${symbol}`,
       {
         headers: {
           Authorization: `Basic ${apiKey}`,
@@ -52,11 +75,11 @@ export async function getPrice(): Promise<OracleData> {
     );
 
     const data = res.data?.data;
-    if (!data || !data[assetSymbol]) {
-      throw new Error(`No price data for ${assetSymbol}`);
+    if (!data || !data[symbol]) {
+      throw new Error(`No price data for ${symbol}`);
     }
 
-    const assetData = data[assetSymbol];
+    const assetData = data[symbol];
     const priceStr =
       assetData?.stork_signed_price?.price ||
       assetData?.price ||
@@ -80,17 +103,19 @@ export async function getPrice(): Promise<OracleData> {
       ? timestamp * 1000
       : Number(timestamp);
 
-    const stale = Date.now() - tsMs > FRESHNESS_THRESHOLD_MS;
+    const stale = isStale(tsMs);
 
     if (price <= 0) {
       throw new Error(`Invalid price: ${price}`);
     }
 
-    return { price, ts: tsMs, stale };
+    const result: OracleData = { price, ts: tsMs, stale, source: "stork" };
+    cacheByAsset[symbol] = { data: result, fetchedAt: Date.now() };
+    return result;
   } catch (err: any) {
     console.error("[Stork] getPrice error:", err.message);
     // Fallback to simulated
-    return { price: simPrice, ts: Date.now(), stale: true };
+    return { price: simPrice, ts: Date.now(), stale: true, source: "sim" };
   }
 }
 

@@ -48,6 +48,8 @@ export default function ActionLogTable({ logs }: Props) {
                           ? "var(--warning)"
                           : log.action === "BLOCKED"
                           ? "var(--danger)"
+                          : log.action === "rebalance"
+                          ? "var(--accent-2)"
                           : log.action === "resetUser"
                           ? "var(--danger)"
                           : "var(--muted-strong)",

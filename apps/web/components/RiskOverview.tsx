@@ -38,6 +38,7 @@ export default function RiskOverview({ snapshot }: Props) {
   const maxBorrowNum = parseFloat(snapshot.maxBorrowUSDC);
   const availableBorrow = Math.max(0, maxBorrowNum - debtNum);
   const collateralUnits = formatCollateralUnits(snapshot.collateralAmount, 2);
+  const sourceLabel = snapshot.oracleSource === "stork" ? "Stork" : "Simulated";
 
   return (
     <div style={{ ...styles.card, animationDelay: "0.05s" }}>
@@ -50,6 +51,8 @@ export default function RiskOverview({ snapshot }: Props) {
             Updated: {new Date(snapshot.oracleTs).toLocaleTimeString()}
             {" | "}
             Change: {snapshot.changePct.toFixed(2)}%
+            {" | "}
+            Source: {sourceLabel}
           </span>
         </div>
         <div style={styles.metric}>

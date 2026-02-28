@@ -12,6 +12,7 @@ import {
   computeMaxBorrow,
   computeHealthFactor,
 } from "./utils/math";
+import { BucketName } from "./integrations/circle";
 
 const router = Router();
 
@@ -66,6 +67,7 @@ router.get("/api/oracle", async (_req: Request, res: Response) => {
       ts: data.ts,
       changePct,
       stale: data.stale,
+      source: data.source,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -235,6 +237,70 @@ router.post("/api/user/reset", async (req: Request, res: Response) => {
     });
 
     res.json({ arcTxHash });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/manual/rebalance
+router.post("/api/manual/rebalance", async (req: Request, res: Response) => {
+  try {
+    const { user, fromBucket, toBucket, amountUSDC } = req.body;
+    if (!user || !fromBucket || !toBucket || !amountUSDC) {
+      res
+        .status(400)
+        .json({ error: "user, fromBucket, toBucket, amountUSDC required" });
+      return;
+    }
+
+    const validBuckets: BucketName[] = [
+      "liquidity",
+      "reserve",
+      "yield",
+      "creditFacility",
+    ];
+    if (
+      !validBuckets.includes(fromBucket) ||
+      !validBuckets.includes(toBucket)
+    ) {
+      res.status(400).json({ error: "invalid bucket" });
+      return;
+    }
+
+    const amount = parseFloat(amountUSDC);
+    const amountBigInt = numberToUSDC(amount);
+
+    // Circle transfer between buckets
+    const result = await circle.transfer(fromBucket, toBucket, amount);
+
+    // Record on Arc
+    const arcTxHash = await arc.recordRebalance(
+      fromBucket,
+      toBucket,
+      amountBigInt,
+      result.circleTxRef
+    );
+
+    // Log decision
+    const rationale = `Manual rebalance ${amountUSDC} from ${fromBucket} to ${toBucket}`;
+    const rHash = rationaleHash(rationale);
+    await arc.logDecision(
+      JSON.stringify({ manual: true, amount: amountUSDC, fromBucket, toBucket }),
+      `rebalance:${amountUSDC}`,
+      rHash
+    );
+
+    store.addLog({
+      ts: Date.now(),
+      action: "rebalance",
+      amountUSDC,
+      healthFactor: 0,
+      rationale,
+      circleTxRef: result.circleTxRef,
+      arcTxHash,
+    });
+
+    res.json({ circleTxRef: result.circleTxRef, arcTxHash });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
