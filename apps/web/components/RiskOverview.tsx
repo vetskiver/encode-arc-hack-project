@@ -4,6 +4,7 @@ import HealthFactorGauge from "./HealthFactorGauge";
 
 interface Props {
   snapshot: Snapshot | null;
+  lastReason?: string;
   minHealthBps?: number;
   emergencyHealthBps?: number;
 }
@@ -24,6 +25,7 @@ function formatCollateralUnits(raw: string, decimals: number): string {
 
 export default function RiskOverview({
   snapshot,
+  lastReason,
   minHealthBps = 14000,
   emergencyHealthBps = 12000,
 }: Props) {
@@ -114,6 +116,29 @@ export default function RiskOverview({
           />
         </div>
       </div>
+
+      {lastReason && (
+        <div style={{
+          ...styles.lastDecision,
+          ...(lastReason.startsWith("Blocked") || lastReason.startsWith("Risk")
+            ? styles.lastDecisionRisk
+            : lastReason.startsWith("Executed")
+            ? styles.lastDecisionSuccess
+            : styles.lastDecisionNeutral),
+        }}>
+          <span style={styles.lastDecisionIcon}>
+            {lastReason.startsWith("Blocked") ? "🛑"
+              : lastReason.startsWith("Risk") ? "⚠️"
+              : lastReason.startsWith("Error") ? "❌"
+              : lastReason.startsWith("Executed") ? "✅"
+              : "💬"}
+          </span>
+          <div style={styles.lastDecisionText}>
+            <span style={styles.lastDecisionLabel}>Last decision</span>
+            <span style={styles.lastDecisionReason}>{lastReason}</span>
+          </div>
+        </div>
+      )}
 
       {snapshot.pendingPayment && (
         <div style={styles.pending}>
@@ -217,15 +242,60 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.8,
   },
   staleBadge: {
-  marginLeft: 6,
-  padding: "1px 7px",
-  borderRadius: 6,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: 0.8,
-  backgroundColor: "rgba(245,158,11,0.15)",
-  color: "#f59e0b",
-  border: "1px solid rgba(245,158,11,0.35)",
-  verticalAlign: "middle",
+    marginLeft: 6,
+    padding: "1px 7px",
+    borderRadius: 6,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.8,
+    backgroundColor: "rgba(245,158,11,0.15)",
+    color: "#f59e0b",
+    border: "1px solid rgba(245,158,11,0.35)",
+    verticalAlign: "middle",
+  },
+  lastDecision: {
+    marginTop: 16,
+    padding: "10px 14px",
+    borderRadius: 10,
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    border: "1px solid",
+  },
+  lastDecisionNeutral: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "var(--border)",
+  },
+  lastDecisionSuccess: {
+    backgroundColor: "rgba(16,185,129,0.07)",
+    borderColor: "rgba(16,185,129,0.25)",
+  },
+  lastDecisionRisk: {
+    backgroundColor: "rgba(239,68,68,0.07)",
+    borderColor: "rgba(239,68,68,0.25)",
+  },
+  lastDecisionIcon: {
+    fontSize: 15,
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  lastDecisionText: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 2,
+    minWidth: 0,
+  },
+  lastDecisionLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    color: "var(--muted)",
+  },
+  lastDecisionReason: {
+    fontSize: 13,
+    color: "var(--text)",
+    opacity: 0.85,
+    lineHeight: 1.4,
   },
 };
