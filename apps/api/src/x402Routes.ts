@@ -16,32 +16,37 @@ import * as stork from "./integrations/stork";
  */
 const router = Router();
 
-const sellerAddress =
-  process.env.X402_SELLER_ADDRESS ||
-  process.env.DEFAULT_COMPANY_ADDRESS ||
-  store.defaultUser;
+// Lazily initialise the gateway so env vars are read after dotenv.config() runs.
+let _gateway: ReturnType<typeof createGatewayMiddleware> | null = null;
+function getGateway() {
+  if (!_gateway) {
+    const sellerAddress =
+      process.env.X402_SELLER_ADDRESS ||
+      process.env.DEFAULT_COMPANY_ADDRESS ||
+      store.defaultUser;
 
-const networks = (process.env.X402_NETWORKS || "")
-  .split(",")
-  .map((n) => n.trim())
-  .filter(Boolean);
+    const facilitatorUrl = process.env.X402_FACILITATOR_URL;
 
-const facilitatorUrl = process.env.X402_FACILITATOR_URL;
-const price = process.env.X402_PRICE || "$0.01";
+    _gateway = createGatewayMiddleware({
+      sellerAddress,
+      // No network restriction — accept from all supported Gateway chains (recommended)
+      facilitatorUrl,
+      description: "horizn AI Risk Intelligence — pay-per-query oracle & risk data",
+    });
+  }
+  return _gateway;
+}
 
-const gateway = createGatewayMiddleware({
-  sellerAddress,
-  // No network restriction — accept from all supported Gateway chains (recommended)
-  facilitatorUrl,
-  description: "horizn AI Risk Intelligence — pay-per-query oracle & risk data",
-});
+function getPrice() {
+  return process.env.X402_PRICE || "$0.01";
+}
 
 /**
  * GET /api/paywall/oracle/:symbol
  * Pay $0.01 to get the live Stork oracle price for BTC, ETH, or USDC.
  * Demonstrates agents paying for premium oracle data via x402 micropayments.
  */
-router.get("/api/paywall/oracle/:symbol", gateway.require(price), async (req, res) => {
+router.get("/api/paywall/oracle/:symbol", (req, res, next) => getGateway().require(getPrice())(req, res, next), async (req, res) => {
   const payment = (req as PaymentRequest).payment;
   const symbol = (req.params.symbol || "BTCUSD").toUpperCase();
 
@@ -69,7 +74,7 @@ router.get("/api/paywall/oracle/:symbol", gateway.require(price), async (req, re
  * collateral value, debt, last agent decision, and policy parameters.
  * Demonstrates monetised risk intelligence backed by on-chain RWA data.
  */
-router.get("/api/paywall/risk/:companyId", gateway.require(price), (req, res) => {
+router.get("/api/paywall/risk/:companyId", (req, res, next) => getGateway().require(getPrice())(req, res, next), (req, res) => {
   const payment = (req as PaymentRequest).payment;
   const company = store.getCompany(req.params.companyId);
 
@@ -120,11 +125,15 @@ router.get("/api/paywall/risk/:companyId", gateway.require(price), (req, res) =>
  * GET /api/paywall/health — free health check (no payment required)
  */
 router.get("/api/paywall/health", (_req, res) => {
+  const sellerAddress =
+    process.env.X402_SELLER_ADDRESS ||
+    process.env.DEFAULT_COMPANY_ADDRESS ||
+    store.defaultUser;
   res.json({
     ok: true,
-    price,
+    price: getPrice(),
     sellerAddress,
-    networks: networks.length > 0 ? networks : "all",
+    networks: "all",
     endpoints: [
       "GET /api/paywall/oracle/:symbol  — live oracle price (BTC/ETH/USDC)",
       "GET /api/paywall/risk/:companyId — AI risk report (atlas/northwind/harbor)",

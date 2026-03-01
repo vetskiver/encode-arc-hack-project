@@ -1,4 +1,3 @@
-import { Redis } from "@upstash/redis";
 import * as arc from "../integrations/arc";
 import * as circle from "../integrations/circle";
 import * as stork from "../integrations/stork";
@@ -16,17 +15,6 @@ import {
   bpsToRatio,
 } from "../utils/math";
 import { rationaleHash } from "../utils/hash";
-
-let _redis: Redis | null = null;
-function getRedis(): Redis {
-  if (!_redis) {
-    _redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
-  }
-  return _redis;
-}
 
 export async function agentTick(user: string): Promise<void> {
   console.log("[AgentTick] Starting tick for user:", user);
@@ -75,18 +63,11 @@ export async function agentTick(user: string): Promise<void> {
 
     const pending = await store.getPendingPayment();
 
-    // --- V2 policy extensions: read from Redis, fall back to env ---
-    const redis = getRedis();
-    const [ltrRaw, rrRaw, volRaw, thRaw] = await Promise.all([
-      redis.get<string>("policy:liquidityTargetRatio"),
-      redis.get<string>("policy:reserveRatio"),
-      redis.get<string>("policy:volatilityThresholdPct"),
-      redis.get<string>("policy:targetHealthRatio"),
-    ]);
-    const liquidityTargetRatio = parseFloat(ltrRaw ?? process.env.LIQUIDITY_TARGET_RATIO ?? "0.25");
-    const reserveRatio = parseFloat(rrRaw ?? process.env.RESERVE_RATIO ?? "0.30");
-    const targetHealthRatio = parseFloat(thRaw ?? process.env.TARGET_HEALTH ?? "1.6");
-    const volatilityThresholdPct = parseFloat(volRaw ?? process.env.VOL_THRESHOLD_PCT ?? "3");
+    // --- V2 policy extensions: read from env ---
+    const liquidityTargetRatio = parseFloat(process.env.LIQUIDITY_TARGET_RATIO ?? "0.25");
+    const reserveRatio = parseFloat(process.env.RESERVE_RATIO ?? "0.30");
+    const targetHealthRatio = parseFloat(process.env.TARGET_HEALTH ?? "1.6");
+    const volatilityThresholdPct = parseFloat(process.env.VOL_THRESHOLD_PCT ?? "3");
     const maxYieldAllocPct = parseFloat(process.env.MAX_YIELD_ALLOC_PCT || "0.35");
     const minTargetYieldPct = parseFloat(process.env.MIN_TARGET_YIELD_PCT || "3");
 
@@ -228,7 +209,7 @@ export async function agentTick(user: string): Promise<void> {
         const postTotal = postLiquidity + postReserve + postYield;
 
         // Update recent action logs with post-execution HF
-        const recentLogs = (await store.getActionLogs()).slice(0, safetyResult.plan.actions.length);
+        const recentLogs = store.actionLogs.slice(0, safetyResult.plan.actions.length);
         for (const log of recentLogs) {
           log.hfAfter = postHF;
           log.liquidityAfter = postLiquidity;
