@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import routes from "./routes";
+import x402Routes from "./x402Routes";
 import { initArc } from "./integrations/arc";
 import { initCircle } from "./integrations/circle";
 import { initStork } from "./integrations/stork";
@@ -32,6 +33,7 @@ export function createApp() {
   }
 
   app.use(routes);
+  app.use(x402Routes);
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, ts: Date.now() });
