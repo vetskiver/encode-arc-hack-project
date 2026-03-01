@@ -6,6 +6,7 @@ import CompanyCard from "../components/CompanyCard";
 import PlatformOverview from "../components/PlatformOverview"
 import PlatformActivityFeed from "../components/PlatformActivityFeed";
 import SidebarNav from "../components/Sidebar";
+import NanopaymentPanel from "../components/NanopaymentPanel";
 
 const POLL_INTERVAL = 3000;
 
@@ -140,6 +141,9 @@ export default function Home() {
           <div style={styles.shockResult}>{shockResult}</div>
         )}
       </div>
+
+      {/* Nanopayments API */}
+      <NanopaymentPanel />
 
       {/* Companies */}
       <div style={styles.companies}>

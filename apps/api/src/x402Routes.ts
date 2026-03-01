@@ -31,7 +31,7 @@ const price = process.env.X402_PRICE || "$0.01";
 
 const gateway = createGatewayMiddleware({
   sellerAddress,
-  networks: networks.length > 0 ? networks : undefined,
+  // No network restriction — accept from all supported Gateway chains (recommended)
   facilitatorUrl,
   description: "horizn AI Risk Intelligence — pay-per-query oracle & risk data",
 });
