@@ -14,15 +14,18 @@ export function startAgentLoop(user: string): void {
     return;
   }
 
-  // Enable all companies
-  for (const id of store.getAllCompanyIds()) {
-    store.updateCompanyTelemetry(id, {
-      agentEnabled: true,
-      status: "Monitoring",
-      lastReason: "Agent started",
-      nextTickAt: Date.now() + TICK_MS,
-    });
-  }
+  // Enable all companies async (fire and forget — non-fatal)
+  (async () => {
+    const ids = await store.getAllCompanyIds();
+    for (const id of ids) {
+      await store.updateCompanyTelemetry(id, {
+        agentEnabled: true,
+        status: "Monitoring",
+        lastReason: "Agent started",
+        nextTickAt: Date.now() + TICK_MS,
+      });
+    }
+  })().catch(err => console.warn("[AgentLoop] Failed to enable companies:", err.message));
 
   setAgentEnabled(true);
   setStatus("Monitoring");
@@ -40,17 +43,19 @@ export function startAgentLoop(user: string): void {
     const nextTick = Date.now() + TICK_MS;
     setNextTickAt(nextTick);
 
-    // Update next tick for all companies
-    for (const id of store.getAllCompanyIds()) {
-      store.updateCompanyTelemetry(id, { nextTickAt: nextTick });
-    }
-
     try {
-      // Run the original agent tick (for Arc contract + Circle wallet state)
+      const ids = await store.getAllCompanyIds();
+
+      // Update next tick for all companies
+      for (const id of ids) {
+        await store.updateCompanyTelemetry(id, { nextTickAt: nextTick });
+      }
+
+      // Run the original agent tick (Arc contract + Circle wallet state)
       await agentTick(user);
 
       // Run per-company simulated ticks
-      for (const id of store.getAllCompanyIds()) {
+      for (const id of ids) {
         try {
           await companyAgentTick(id);
         } catch (err: any) {
@@ -71,15 +76,18 @@ export function stopAgentLoop(): void {
     intervalHandle = null;
   }
 
-  // Stop all companies
-  for (const id of store.getAllCompanyIds()) {
-    store.updateCompanyTelemetry(id, {
-      agentEnabled: false,
-      status: "Monitoring",
-      lastReason: "Agent stopped",
-      nextTickAt: 0,
-    });
-  }
+  // Stop all companies async (fire and forget — non-fatal)
+  (async () => {
+    const ids = await store.getAllCompanyIds();
+    for (const id of ids) {
+      await store.updateCompanyTelemetry(id, {
+        agentEnabled: false,
+        status: "Monitoring",
+        lastReason: "Agent stopped",
+        nextTickAt: 0,
+      });
+    }
+  })().catch(err => console.warn("[AgentLoop] Failed to stop companies:", err.message));
 
   setAgentEnabled(false);
   setStatus("Monitoring");
