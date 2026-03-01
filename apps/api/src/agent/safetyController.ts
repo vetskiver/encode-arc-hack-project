@@ -29,6 +29,7 @@ export interface Snapshot {
     maxYieldAllocPct?: number;    // 0-1 fraction
     minTargetYieldPct?: number;   // percent APY threshold
   };
+  dailySpentUSDC?: number;   // amount already spent today (dollar float)
   totalUSDC: number;
   liquidityRatio: number;
   reserveRatio: number;
@@ -75,6 +76,9 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
   const perTxMax = basePerTxMax > 0
     ? basePerTxMax * (changePctAbs > volThreshold ? 0.5 : 1) // tighten under volatility
     : 0;
+  const dailyMax = snapshot.policy.dailyMaxUSDC / 1e6;
+  const dailySpent = snapshot.dailySpentUSDC ?? 0;
+  const dailyRemaining = dailyMax > 0 ? Math.max(0, dailyMax - dailySpent) : Infinity;
   const liquidityMin = snapshot.policy.liquidityMinUSDC / 1e6;
   const liquidityTarget = snapshot.policy.liquidityTargetRatio || 0;
   const reserveTarget = snapshot.policy.reserveRatio || 0;
@@ -175,6 +179,18 @@ export function safetyController(snapshot: Snapshot, proposal: Plan): SafetyResu
     if (perTxMax > 0 && a.amountUSDC > perTxMax) {
       a.amountUSDC = perTxMax;
       a.rationale += ` (capped to perTxMax=$${perTxMax.toFixed(2)})`;
+    }
+
+    // Rule 5b: Daily spend limit — enforce for debt-increasing actions
+    if ((a.type === "borrow" || a.type === "payment") && dailyMax > 0) {
+      if (dailyRemaining <= 0.01) {
+        console.log(`[Safety] Blocking ${a.type}: daily limit exhausted (spent=$${dailySpent.toFixed(2)}, limit=$${dailyMax.toFixed(2)})`);
+        continue;
+      }
+      if (a.amountUSDC > dailyRemaining) {
+        a.amountUSDC = dailyRemaining;
+        a.rationale += ` (capped to dailyRemaining=$${dailyRemaining.toFixed(2)} of $${dailyMax.toFixed(2)}/day)`;
+      }
     }
 
     // Rule 3: LTV check for borrows

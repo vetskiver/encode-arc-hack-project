@@ -1,12 +1,21 @@
-import React from "react";
+import React, { useState } from "react";
 import { ActionLog } from "../lib/types";
+import { fmtUSD } from "../lib/format";
+
+const ARC_EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL || "https://explorer.testnet.arc.network";
+
+/** Returns true if the hash looks like a real on-chain tx (0x + 64 hex chars) */
+function isRealTxHash(hash: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/.test(hash);
+}
 
 interface Props {
   logs: ActionLog[];
 }
 
-
 export default function ActionLogTable({ logs }: Props) {
+  const [expandedTx, setExpandedTx] = useState<number | null>(null);
+
   return (
     <div style={{ ...styles.card, animationDelay: "0.2s" }}>
       <h3 style={styles.heading}>Action Log</h3>
@@ -16,12 +25,12 @@ export default function ActionLogTable({ logs }: Props) {
             <tr>
               <th style={styles.th}>Time</th>
               <th style={styles.th}>Action</th>
-              <th style={styles.th}>Amount (USDC)</th>
+              <th style={styles.th}>Amount (Scaled)</th>
               <th style={styles.th}>HF</th>
               <th style={styles.th}>Policy Rule</th>
               <th style={styles.th}>Trigger</th>
               <th style={styles.th}>Rationale</th>
-              <th style={styles.th}>Refs</th>
+              <th style={styles.th}>Tx Proof</th>
             </tr>
           </thead>
           <tbody>
@@ -35,54 +44,125 @@ export default function ActionLogTable({ logs }: Props) {
             {logs.map((log, i) => {
               const hfBefore = log.hfBefore ?? log.healthFactor;
               const hfAfter = log.hfAfter;
-              const hfDisplay = hfBefore >= 100 ? "∞" : hfBefore.toFixed(2);
+              const hfDisplay = hfBefore >= 100 ? "\u221E" : hfBefore.toFixed(2);
               const hfDelta = hfAfter !== undefined && hfAfter < 100
-                ? ` -> ${hfAfter.toFixed(2)}`
+                ? ` \u2192 ${hfAfter.toFixed(2)}`
                 : "";
+              const hfColor = hfAfter !== undefined
+                ? (hfAfter > hfBefore ? "#10b981" : hfAfter < hfBefore ? "#ef4444" : "inherit")
+                : "inherit";
+
+              const isExpanded = expandedTx === i;
+              const hasCircle = log.circleTxRef && log.circleTxRef !== "";
+              const hasArc = log.arcTxHash && log.arcTxHash !== "";
 
               return (
-                <tr key={i}>
-                  <td style={styles.td}>
-                    {new Date(log.ts).toLocaleTimeString()}
-                  </td>
-                  <td style={styles.td}>
-                    <span
-                      style={{
-                        ...styles.actionBadge,
-                        backgroundColor:
-                          log.action === "borrow"
-                            ? "var(--accent)"
-                            : log.action === "repay"
-                            ? "var(--success)"
-                            : log.action === "payment"
-                            ? "var(--warning)"
-                            : log.action === "BLOCKED"
-                            ? "var(--danger)"
-                            : log.action === "rebalance"
-                            ? "var(--accent-2)"
-                            : log.action === "resetUser"
-                            ? "var(--danger)"
-                            : "var(--muted-strong)",
-                      }}
-                    >
-                      {log.action}
-                    </span>
-                  </td>
-                  <td style={styles.td}>{parseFloat(log.amountUSDC).toLocaleString()}</td>
-                  <td style={styles.td}>
-                    {hfDisplay}{hfDelta}
-                  </td>
-                  <td style={styles.tdRule}>
-                    {log.policyRule ? (
-                      <span style={styles.ruleBadge}>{log.policyRule}</span>
-                    ) : "—"}
-                  </td>
-                  <td style={styles.tdTrigger}>{log.trigger || "—"}</td>
-                  <td style={styles.tdRationale}>{log.rationale}</td>
-                  <td style={styles.tdMono}>
-                    {log.circleTxRef ? log.circleTxRef.slice(0, 10) : "—"}
-                  </td>
-                </tr>
+                <React.Fragment key={i}>
+                  <tr>
+                    <td style={styles.td}>
+                      {new Date(log.ts).toLocaleTimeString()}
+                    </td>
+                    <td style={styles.td}>
+                      <span
+                        style={{
+                          ...styles.actionBadge,
+                          backgroundColor:
+                            log.action === "borrow"
+                              ? "var(--accent)"
+                              : log.action === "repay"
+                              ? "var(--success)"
+                              : log.action === "payment"
+                              ? "var(--warning)"
+                              : log.action === "BLOCKED"
+                              ? "var(--danger)"
+                              : log.action === "rebalance"
+                              ? "var(--accent-2)"
+                              : log.action === "resetUser"
+                              ? "var(--danger)"
+                              : "var(--muted-strong)",
+                        }}
+                      >
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={styles.td}>{fmtUSD(parseFloat(log.amountUSDC))}</td>
+                    <td style={{ ...styles.td, color: hfColor }}>
+                      {hfDisplay}{hfDelta}
+                    </td>
+                    <td style={styles.tdRule}>
+                      {log.policyRule ? (
+                        <span style={styles.ruleBadge}>{log.policyRule}</span>
+                      ) : "\u2014"}
+                    </td>
+                    <td style={styles.tdTrigger}>{log.trigger || "\u2014"}</td>
+                    <td style={styles.tdRationale}>{log.rationale}</td>
+                    <td style={styles.tdProof}>
+                      {(hasCircle || hasArc) ? (
+                        <button
+                          style={styles.proofBtn}
+                          onClick={() => setExpandedTx(isExpanded ? null : i)}
+                        >
+                          {isExpanded ? "Hide" : "View"}
+                        </button>
+                      ) : "\u2014"}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={8} style={styles.proofRow}>
+                        <div style={styles.proofContent}>
+                          {hasCircle && (
+                            <div style={styles.proofItem}>
+                              <span style={styles.proofLabel}>Circle TX:</span>
+                              <code style={styles.proofCode}>{log.circleTxRef}</code>
+                            </div>
+                          )}
+                          {hasArc && (
+                            <div style={styles.proofItem}>
+                              <span style={styles.proofLabel}>Arc TX:</span>
+                              {isRealTxHash(log.arcTxHash) ? (
+                                <a
+                                  href={`${ARC_EXPLORER}/tx/${log.arcTxHash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={styles.proofLink}
+                                  title="Verify on Arc block explorer"
+                                >
+                                  <code style={styles.proofCode}>{log.arcTxHash.slice(0, 18)}…</code>
+                                  <span style={styles.verifyBadge}>Verify ↗</span>
+                                </a>
+                              ) : (
+                                <code style={{ ...styles.proofCode, opacity: 0.5 }}>{log.arcTxHash}</code>
+                              )}
+                            </div>
+                          )}
+                          {log.companyId && (
+                            <div style={styles.proofItem}>
+                              <span style={styles.proofLabel}>Company:</span>
+                              <span>{log.companyId}</span>
+                            </div>
+                          )}
+                          {log.fromBucket && (
+                            <div style={styles.proofItem}>
+                              <span style={styles.proofLabel}>From:</span>
+                              <span>{log.fromBucket}</span>
+                              <span style={styles.proofLabel}>To:</span>
+                              <span>{log.toBucket}</span>
+                            </div>
+                          )}
+                          {log.liquidityBefore !== undefined && (
+                            <div style={styles.proofItem}>
+                              <span style={styles.proofLabel}>Liquidity:</span>
+                              <span>${log.liquidityBefore?.toFixed(2)} {"\u2192"} ${log.liquidityAfter?.toFixed(2)}</span>
+                              <span style={styles.proofLabel}>Reserve:</span>
+                              <span>${log.reserveBefore?.toFixed(2)} {"\u2192"} ${log.reserveAfter?.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -141,13 +221,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "var(--muted)",
   },
-  tdMono: {
-    padding: "8px 10px",
-    borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
-    fontFamily: "var(--font-mono)",
-    fontSize: 11,
-    color: "var(--muted)",
-  },
   empty: {
     padding: 20,
     textAlign: "center" as const,
@@ -186,5 +259,75 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     fontSize: 11,
     color: "var(--muted)",
+  },
+  tdProof: {
+    padding: "8px 10px",
+    borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
+  },
+  proofBtn: {
+    background: "rgba(99, 102, 241, 0.12)",
+    color: "#818cf8",
+    border: "1px solid rgba(99, 102, 241, 0.3)",
+    borderRadius: 6,
+    padding: "2px 10px",
+    fontSize: 10,
+    fontWeight: 700,
+    cursor: "pointer",
+    letterSpacing: 0.5,
+    textTransform: "uppercase" as const,
+  },
+  proofRow: {
+    padding: 0,
+    borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
+  },
+  proofContent: {
+    padding: "10px 16px",
+    background: "rgba(99, 102, 241, 0.04)",
+    borderTop: "1px solid rgba(99, 102, 241, 0.1)",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  proofItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 11,
+    flexWrap: "wrap" as const,
+  },
+  proofLabel: {
+    fontWeight: 700,
+    color: "var(--muted)",
+    fontSize: 10,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+  },
+  proofCode: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    color: "#818cf8",
+    background: "rgba(99, 102, 241, 0.08)",
+    padding: "2px 6px",
+    borderRadius: 4,
+    wordBreak: "break-all" as const,
+  },
+  proofLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    textDecoration: "none",
+    color: "inherit",
+  },
+  verifyBadge: {
+    display: "inline-block",
+    padding: "1px 6px",
+    borderRadius: 4,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    color: "#10b981",
+    border: "1px solid rgba(16, 185, 129, 0.3)",
+    flexShrink: 0,
   },
 };
