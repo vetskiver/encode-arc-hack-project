@@ -36,8 +36,6 @@ export async function companyAgentTick(companyId: string): Promise<void> {
     // Track per-company price history (for per-company volatility)
     store.addCompanyPrice(companyId, oracle.price, oracle.ts);
     const changePct = store.getCompanyChangePct(companyId);
-    // Also update shared history (for backwards-compat / platform overview)
-    store.addPrice(oracle.price, oracle.ts);
 
     // Push oracle price on-chain so Arc contract has up-to-date data (non-fatal)
     try {

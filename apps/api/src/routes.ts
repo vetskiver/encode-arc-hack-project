@@ -149,6 +149,12 @@ router.get("/api/platform/summary", async (_req: Request, res: Response) => {
     // Use a representative oracle (BTC as platform oracle since it's most volatile)
     const platformOracle = oraclesBySymbol["BTCUSD"] || oraclesBySymbol["ETHUSD"] || oraclesBySymbol["USDCUSD"] || { price: 1, ts: Date.now(), source: "sim", stale: false };
 
+    // Use the per-company changePct for the platform oracle symbol (avoids cross-asset contamination)
+    const refCompany = store.companies.find(c => c.oracleSymbol === "BTCUSD")
+      || store.companies.find(c => c.oracleSymbol === "ETHUSD")
+      || store.companies[0];
+    const platformChangePct = refCompany ? store.getCompanyChangePct(refCompany.id) : 0;
+
     res.json({
       totalCollateralValue,
       totalDebt,
@@ -162,7 +168,7 @@ router.get("/api/platform/summary", async (_req: Request, res: Response) => {
         ts: platformOracle.ts,
         source: platformOracle.source,
         stale: platformOracle.stale,
-        changePct: store.getChangePct(),
+        changePct: platformChangePct,
       },
     });
   } catch (err: any) {
