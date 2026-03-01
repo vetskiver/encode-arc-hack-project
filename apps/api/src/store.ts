@@ -110,8 +110,8 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
       reserveRatio: 0.40,
       volatilityThresholdPct: 2,
       targetHealthRatio: 2.2,
-      perTxMaxUSDC: 5,
-      dailyMaxUSDC: 25,
+      perTxMaxUSDC: 0.50,
+      dailyMaxUSDC: 3,
     },
     telemetry: {
       agentEnabled: false,
@@ -149,8 +149,8 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
       reserveRatio: 0.30,
       volatilityThresholdPct: 3,
       targetHealthRatio: 1.6,
-      perTxMaxUSDC: 10,
-      dailyMaxUSDC: 50,
+      perTxMaxUSDC: 1.00,
+      dailyMaxUSDC: 5,
     },
     telemetry: {
       agentEnabled: false,
@@ -187,8 +187,8 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
       reserveRatio: 0.25,
       volatilityThresholdPct: 5,
       targetHealthRatio: 1.35,
-      perTxMaxUSDC: 15,
-      dailyMaxUSDC: 75,
+      perTxMaxUSDC: 1.50,
+      dailyMaxUSDC: 8,
     },
     telemetry: {
       agentEnabled: false,
