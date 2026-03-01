@@ -13,16 +13,9 @@ import PlatformOverview from "../components/PlatformOverview";
 import CompanyProfileCard from "../components/CompanyProfileCard";
 
 const POLL_INTERVAL = 3000;
-<<<<<<< HEAD
 const SIDEBAR_W = 270;
 const SIDEBAR_W_COLLAPSED = 74;
 const SIDEBAR_MARGIN = 0;
-=======
-const SIDEBAR_W = 276;
-const SIDEBAR_W_COLLAPSED = 78;
-const SIDEBAR_MARGIN = 28;
->>>>>>> ali-branch
-
 const COMPANY_ID = "northwind";
 
 export default function CompanyNorthwindPage() {
@@ -31,7 +24,7 @@ export default function CompanyNorthwindPage() {
   const [platform, setPlatform] = useState<PlatformSummary | null>(null);
   const [error, setError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const leftPad = sidebarCollapsed ? 74 : 270;
+  const leftPad = (sidebarCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W) + SIDEBAR_MARGIN;
 
   const refresh = useCallback(async () => {
     try {
@@ -60,66 +53,37 @@ export default function CompanyNorthwindPage() {
   const emergencyHealthBps = policy?.emergencyHealthBps ?? 12000;
 
   return (
-  <div style={{ ...styles.page, paddingLeft: leftPad, transition: "padding-left 240ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
-    <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-    <HeaderStatusBar status={status} platform={platform} title="Northwind Logistics" />
-    <PlatformOverview status={status} platform={platform} />
-
-    {error && <div style={styles.error}>Backend unreachable: {error}</div>}
-
-    <div style={styles.layout}>
-
-      <div style={styles.main}>
-        <CompanyProfileCard
-          name={status?.company?.name || "Northwind Logistics"}
-          riskProfile={status?.company?.riskProfile || "balanced"}
-          policy={status?.company?.policy || null}
-          address="0x0000000000000000000000000000000000000002"
-        />
-        <RiskOverview
-          snapshot={status?.snapshot || null}
-          lastReason={status?.lastReason}
-          minHealthBps={minHealthBps}
-          emergencyHealthBps={emergencyHealthBps}
-        />
-        <DecisionReasoningPanel
-          snapshot={status?.snapshot || null}
-          lastReason={status?.lastReason}
-          status={status?.status}
-        />
-        <TreasuryBuckets snapshot={status?.snapshot || null} />
-        <ActionLogTable logs={logs} />
+    <div style={{ ...styles.page, paddingLeft: leftPad, transition: "padding-left 240ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
+      <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
+      <HeaderStatusBar status={status} platform={platform} title="Northwind Logistics" />
+      <PlatformOverview status={status} platform={platform} />
+      {error && <div style={styles.error}>Backend unreachable: {error}</div>}
+      <div style={styles.layout}>
+        <div style={styles.main}>
+          <CompanyProfileCard
+            name={status?.company?.name || "Northwind Logistics"}
+            riskProfile={status?.company?.riskProfile || "balanced"}
+            policy={status?.company?.policy || null}
+            address="0x81008ADD908c9702FA595E942e8430AECEad8080"
+          />
+          <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} minHealthBps={minHealthBps} emergencyHealthBps={emergencyHealthBps} />
+          <DecisionReasoningPanel snapshot={status?.snapshot || null} lastReason={status?.lastReason} status={status?.status} />
+          <TreasuryBuckets snapshot={status?.snapshot || null} />
+          <ActionLogTable logs={logs} />
+        </div>
+        <div style={styles.side}>
+          <CollateralPanel defaultUser="0x81008ADD908c9702FA595E942e8430AECEad8080" agentEnabled={status?.agentEnabled || false} snapshot={status?.snapshot || null} />
+          <PaymentRequestForm defaultUser="0x81008ADD908c9702FA595E942e8430AECEad8080" />
+        </div>
       </div>
-
-       <div style={styles.side}>
-        <CollateralPanel
-          defaultUser="0x0000000000000000000000000000000000000002"
-          agentEnabled={status?.agentEnabled || false}
-          snapshot={status?.snapshot || null}
-        />
-        <PaymentRequestForm defaultUser="0x0000000000000000000000000000000000000002" />
-      </div>
-
     </div>
-  </div>
-);
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh" },
-  layout: {
-    maxWidth: 950,
-    margin: "0 auto",
-    padding: 20,
-    display: "column",
-    gridTemplateColumns: "2fr 1fr",
-    gap: 16,
-    alignItems: "start",
-  },
+  layout: { maxWidth: 950, margin: "0 auto", padding: 20, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, alignItems: "start" },
   main: { display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
   side: { display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
-  error: {
-    padding: "10px 20px",
-    backgroundColor: "rgba(127, 29, 29, 0.6)",
-  },
+  error: { padding: "10px 20px", backgroundColor: "rgba(127, 29, 29, 0.6)" },
 };

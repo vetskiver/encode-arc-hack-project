@@ -13,16 +13,9 @@ import PlatformOverview from "../components/PlatformOverview";
 import CompanyProfileCard from "../components/CompanyProfileCard";
 
 const POLL_INTERVAL = 3000;
-<<<<<<< HEAD
 const SIDEBAR_W = 270;
 const SIDEBAR_W_COLLAPSED = 74;
 const SIDEBAR_MARGIN = 0;
-=======
-const SIDEBAR_W = 276;
-const SIDEBAR_W_COLLAPSED = 78;
-const SIDEBAR_MARGIN = 28;
->>>>>>> ali-branch
-
 const COMPANY_ID = "atlas";
 
 export default function CompanyAtlasPage() {
@@ -60,66 +53,37 @@ export default function CompanyAtlasPage() {
   const emergencyHealthBps = policy?.emergencyHealthBps ?? 15000;
 
   return (
-  <div style={{ ...styles.page, paddingLeft: leftPad, transition: "padding-left 240ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
-    <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-    <HeaderStatusBar status={status} platform={platform} title="Atlas Manufacturing" />
-    <PlatformOverview status={status} platform={platform} />
-
-    {error && <div style={styles.error}>Backend unreachable: {error}</div>}
-
-    <div style={styles.layout}>
-
-      <div style={styles.main}>
-        <CompanyProfileCard
-          name={status?.company?.name || "Atlas Manufacturing"}
-          riskProfile={status?.company?.riskProfile || "conservative"}
-          policy={status?.company?.policy || null}
-          address="0x0000000000000000000000000000000000000001"
-        />
-        <RiskOverview
-          snapshot={status?.snapshot || null}
-          lastReason={status?.lastReason}
-          minHealthBps={minHealthBps}
-          emergencyHealthBps={emergencyHealthBps}
-        />
-        <DecisionReasoningPanel
-          snapshot={status?.snapshot || null}
-          lastReason={status?.lastReason}
-          status={status?.status}
-        />
-        <TreasuryBuckets snapshot={status?.snapshot || null} />
-        <ActionLogTable logs={logs} />
+    <div style={{ ...styles.page, paddingLeft: leftPad, transition: "padding-left 240ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
+      <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
+      <HeaderStatusBar status={status} platform={platform} title="Atlas Manufacturing" />
+      <PlatformOverview status={status} platform={platform} />
+      {error && <div style={styles.error}>Backend unreachable: {error}</div>}
+      <div style={styles.layout}>
+        <div style={styles.main}>
+          <CompanyProfileCard
+            name={status?.company?.name || "Atlas Manufacturing"}
+            riskProfile={status?.company?.riskProfile || "conservative"}
+            policy={status?.company?.policy || null}
+            address="0x81008ADD908c9702FA595E942e8430AECEad807F"
+          />
+          <RiskOverview snapshot={status?.snapshot || null} lastReason={status?.lastReason} minHealthBps={minHealthBps} emergencyHealthBps={emergencyHealthBps} />
+          <DecisionReasoningPanel snapshot={status?.snapshot || null} lastReason={status?.lastReason} status={status?.status} />
+          <TreasuryBuckets snapshot={status?.snapshot || null} />
+          <ActionLogTable logs={logs} />
+        </div>
+        <div style={styles.side}>
+          <CollateralPanel defaultUser="0x81008ADD908c9702FA595E942e8430AECEad807F" agentEnabled={status?.agentEnabled || false} snapshot={status?.snapshot || null} />
+          <PaymentRequestForm defaultUser="0x81008ADD908c9702FA595E942e8430AECEad807F" />
+        </div>
       </div>
-
-       <div style={styles.side}>
-        <CollateralPanel
-          defaultUser="0x0000000000000000000000000000000000000001"
-          agentEnabled={status?.agentEnabled || false}
-          snapshot={status?.snapshot || null}
-        />
-        <PaymentRequestForm defaultUser="0x0000000000000000000000000000000000000001" />
-      </div>
-
     </div>
-  </div>
-);
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh" },
-  layout: {
-    maxWidth: 950,
-    margin: "0 auto",
-    padding: 20,
-    display: "column",
-    gridTemplateColumns: "2fr 1fr",
-    gap: 16,
-    alignItems: "start",
-  },
+  layout: { maxWidth: 950, margin: "0 auto", padding: 20, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, alignItems: "start" },
   main: { display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
   side: { display: "flex", flexDirection: "column", gap: 16, minWidth: 0 },
-  error: {
-    padding: "16px 20px",
-    backgroundColor: "rgba(127, 29, 29, 0.6)",
-  },
+  error: { padding: "16px 20px", backgroundColor: "rgba(127, 29, 29, 0.6)" },
 };
