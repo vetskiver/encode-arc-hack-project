@@ -4,9 +4,10 @@ import { StatusResponse, PlatformSummary } from "../lib/types";
 interface Props {
   status: StatusResponse | null;
   platform?: PlatformSummary | null;
+  title?: string;
 }
 
-export default function HeaderStatusBar({ status, platform }: Props) {
+export default function HeaderStatusBar({ status, platform, title }: Props) {
   const [countdown, setCountdown] = useState("");
   const [flash, setFlash] = useState(false);
   const prevStatus = useRef(status?.status);
@@ -66,7 +67,7 @@ export default function HeaderStatusBar({ status, platform }: Props) {
       >
         {/* Left: page context + last reason */}
         <div className="leftGroup">
-          <span className="pageTitle">Dashboard</span>
+          <span className="pageTitle">{title ?? "Dashboard"}</span>
           {reason ? (
             <div className="reasonPill">
               <span className="reasonIconSpan">{reasonIcon}</span>

@@ -56,7 +56,7 @@ export default function CompanyAtlasPage() {
   return (
   <div style={{ ...styles.page, paddingLeft: leftPad, transition: "padding-left 240ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
     <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-    <HeaderStatusBar status={status} platform={platform} />
+    <HeaderStatusBar status={status} platform={platform} title="Atlas Manufacturing" />
     <PlatformOverview status={status} platform={platform} />
 
     {error && <div style={styles.error}>Backend unreachable: {error}</div>}
