@@ -206,7 +206,7 @@ export async function getBalance(bucket: BucketName): Promise<number> {
   if (!walletId) {
     // Should never happen in real mode due to shouldSimulate(), but keep safe:
     console.warn(`[Circle] Missing wallet ID for "${bucket}". Returning 0.`);
-    return 0;
+    return simBalances[bucket] || 0;
   }
 
   try {
