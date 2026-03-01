@@ -13,10 +13,20 @@ export function createApp() {
   app.use(cors());
   app.use(express.json());
 
-  // Serverless-safe: initialize once per warm instance
   if (!initialized) {
     initArc();
-    initCircle();
+
+    const sim = process.env.CIRCLE_SIM_MODE === "true";
+    const hasUsdc = !!process.env.USDC_TOKEN_ID_OR_ADDRESS;
+
+    if (sim || hasUsdc) {
+      initCircle();
+    } else {
+      console.warn(
+        "[Circle] Skipping init: set CIRCLE_SIM_MODE=true or USDC_TOKEN_ID_OR_ADDRESS"
+      );
+    }
+
     initStork();
     initialized = true;
   }
