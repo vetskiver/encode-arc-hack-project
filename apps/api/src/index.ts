@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import path from "path";
 import { createApp } from "./app";
 import { setPolicy } from "./integrations/arc";
+import { startAgentLoop } from "./agent/agentLoop";
+import { store } from "./store";
 
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -30,5 +32,12 @@ app.listen(PORT, async () => {
     console.warn("[Server] Could not set on-chain policy:", err.message);
   }
 
-
+  // Auto-start the multi-company agent loop so demos run immediately.
+  try {
+    const user = store.defaultUser;
+    startAgentLoop(user);
+    console.log(`[Server] Auto-started agent loop for default user ${user}`);
+  } catch (err: any) {
+    console.warn("[Server] Could not start agent loop:", err.message);
+  }
 });
