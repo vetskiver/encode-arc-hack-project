@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { ActionLog } from "../lib/types";
+import { DISPLAY_SCALE } from "../lib/format";
 
 type Props = {
   logs: ActionLog[];
@@ -17,7 +18,9 @@ function fmtTime(ts: any) {
 function fmtAmount(n: any) {
   const num = typeof n === "string" ? Number(n) : n;
   if (num == null || Number.isNaN(num)) return "—";
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(num);
+  const scaled = num * DISPLAY_SCALE;
+  if (scaled >= 1_000_000) return `$${(scaled / 1_000_000).toFixed(1)}M`;
+  return `$${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(scaled)}`;
 }
 
 function shortTx(tx?: string) {
@@ -78,7 +81,7 @@ export default function PlatformActivityFeed({
                     <span style={styles.company}>{company ? `[${company}]` : ""}</span>
                     <span style={styles.action}>{action}</span>
                     {amount != null && (
-                      <span style={styles.amount}>{fmtAmount(amount)} USDC</span>
+                      <span style={styles.amount}>{fmtAmount(amount)}</span>
                     )}
                   </div>
 

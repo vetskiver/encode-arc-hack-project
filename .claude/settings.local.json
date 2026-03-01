@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.18.0/bin:$PATH\")",
+      "Bash(npx tsc --noEmit --project apps/api/tsconfig.json)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.18.0/bin:$PATH:/usr/bin\")",
+      "Bash(npx next build)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.18.0/bin:/usr/bin:$PATH\")",
+      "Bash(node_modules/.bin/next build)",
+      "Bash(/usr/bin/head -5)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''scripts'',{}\\)\\)\")"
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import React from "react";
 import { Snapshot } from "../lib/types";
+import { fmtUSD } from "../lib/format";
 
 interface Props {
   snapshot: Snapshot | null;
@@ -22,8 +23,7 @@ export default function TreasuryBuckets({ snapshot }: Props) {
   const liquidityHealthy = liquidityRatio >= liquidityTarget;
   const reserveHealthy = reserveRatio >= reserveTarget;
 
-  const fmt = (n: number) =>
-    "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const fmt = (n: number) => fmtUSD(n);
 
   // V2: Progress bar helper
   const ratioBar = (current: number, target: number) => {

@@ -1,6 +1,7 @@
 import React from "react";
 import { Snapshot } from "../lib/types";
 import HealthFactorGauge from "./HealthFactorGauge";
+import { fmtUSD } from "../lib/format";
 
 interface Props {
   snapshot: Snapshot | null;
@@ -65,8 +66,7 @@ export default function RiskOverview({
     targetHealth > 0 ? maxBorrowNum / targetHealth - debtNum : availableBorrow
   );
 
-  const fmt = (n: number) =>
-    n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const fmt = (n: number) => fmtUSD(n);
 
   return (
     <div style={styles.card}>
@@ -104,32 +104,32 @@ export default function RiskOverview({
             }
           />
           <Metric
-            label="Collateral"
-            value={`${collateralUnits} units`}
-            sub={`Value: $${fmt(collateralValueNum)}`}
+            label={`Collateral${snapshot.collateralAsset ? ` (${snapshot.collateralAsset})` : ""}`}
+            value={`${collateralUnits} ${snapshot.collateralAsset || "units"}`}
+            sub={`Value: ${fmt(collateralValueNum)}`}
           />
           <Metric
             label="Debt (USDC)"
-            value={`$${fmt(debtNum)}`}
+            value={fmt(debtNum)}
           />
           <Metric
             label="Max Borrow"
-            value={`$${fmt(maxBorrowNum)}`}
-            sub={`$${fmt(availableBorrow)} available`}
+            value={fmt(maxBorrowNum)}
+            sub={`${fmt(availableBorrow)} available`}
           />
           <Metric
             label="Borrow Now (keeps HF≥target)"
-            value={`$${fmt(safeHeadroom)}`}
+            value={fmt(safeHeadroom)}
             sub={`Target HF ${targetHealth.toFixed(2)} gate`}
           />
           <Metric
             label="Liquidity"
-            value={`$${fmt(parseFloat(snapshot.liquidityUSDC))}`}
+            value={fmt(parseFloat(snapshot.liquidityUSDC))}
             sub="Payments & operations"
           />
           <Metric
             label="Reserve"
-            value={`$${fmt(parseFloat(snapshot.reserveUSDC))}`}
+            value={fmt(parseFloat(snapshot.reserveUSDC))}
             sub="Repay buffer"
           />
           <Metric
@@ -159,6 +159,21 @@ export default function RiskOverview({
             value={`${targetHealth.toFixed(2)}`}
             sub="Borrow gating threshold"
           />
+          {snapshot.dailyMaxUSDC != null && snapshot.dailyMaxUSDC > 0 && (
+            <Metric
+              label="Daily Budget"
+              value={`$${(snapshot.dailySpentUSDC ?? 0).toFixed(2)} / $${snapshot.dailyMaxUSDC.toFixed(2)}`}
+              sub={(() => {
+                const remaining = snapshot.dailyRemainingUSDC ?? (snapshot.dailyMaxUSDC - (snapshot.dailySpentUSDC ?? 0));
+                const pct = snapshot.dailyMaxUSDC > 0 ? ((snapshot.dailySpentUSDC ?? 0) / snapshot.dailyMaxUSDC) * 100 : 0;
+                return (
+                  <span style={{ color: pct > 80 ? "#ef4444" : pct > 50 ? "#f59e0b" : "#10b981" }}>
+                    {`$${remaining.toFixed(2)} remaining (${pct.toFixed(0)}% used)`}
+                  </span>
+                );
+              })()}
+            />
+          )}
         </div>
       </div>
 
