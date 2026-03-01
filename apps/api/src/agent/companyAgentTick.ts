@@ -6,6 +6,7 @@
  */
 import * as stork from "../integrations/stork";
 import * as arc from "../integrations/arc";
+import * as circle from "../integrations/circle";
 import { store, ActionLog, CompanyProfile } from "../store";
 import { planner } from "./planner";
 import { safetyController, Snapshot, PlannedAction } from "./safetyController";
@@ -37,6 +38,14 @@ export async function companyAgentTick(companyId: string): Promise<void> {
     const changePct = store.getCompanyChangePct(companyId);
     // Also update shared history (for backwards-compat / platform overview)
     store.addPrice(oracle.price, oracle.ts);
+
+    // Push oracle price on-chain so Arc contract has up-to-date data (non-fatal)
+    try {
+      const priceBigInt = stork.priceToBigInt(oracle.price);
+      await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
+    } catch (oracleErr: any) {
+      console.warn(`[CompanyTick:${companyId}] setOracleSnapshot failed (non-fatal):`, oracleErr.message);
+    }
 
     // 2. Compute metrics from per-company state
     const collateralValueUSDC = company.collateralUnits * oracle.price;
@@ -164,7 +173,7 @@ export async function companyAgentTick(companyId: string): Promise<void> {
       return;
     }
 
-    // 5. Execute actions (state updated in-memory; Arc calls logged on-chain)
+    // 5. Execute actions (real Circle USDC transfers + Arc on-chain recording)
     for (const action of safetyResult.plan.actions) {
       await executeCompanyAction(companyId, action, snapshot);
     }
@@ -240,42 +249,143 @@ async function executeCompanyAction(
 ): Promise<void> {
   const company = store.getCompany(companyId)!;
   const amount = action.amountUSDC;
+  const amountBigInt = BigInt(Math.round(amount * 1e6));
+  const companyAddress = company.address;
 
-  // Generate simulated Circle tx ref (Circle transfers are simulated per-company)
-  const simTxRef = `sim-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let circleTxRef = `sim-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let arcTxHash = `sim-arc-${companyId}-${Date.now().toString(16)}`;
 
   switch (action.type) {
     case "borrow": {
+      // Real Circle: creditFacility -> liquidity
+      try {
+        const result = await circle.transfer("creditFacility", "liquidity", amount);
+        circleTxRef = result.circleTxRef;
+        console.log(`[CompanyTick:${companyId}] Circle borrow tx: ${circleTxRef}`);
+      } catch (circleErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Circle borrow failed (using sim ref):`, circleErr.message);
+      }
+
+      // Update in-memory state
       company.debtUSDC += amount;
       company.liquidityUSDC += amount;
+
+      // Real Arc: record borrow on-chain
+      try {
+        arcTxHash = await arc.recordBorrow(companyAddress, amountBigInt, circleTxRef);
+        console.log(`[CompanyTick:${companyId}] Arc recordBorrow: ${arcTxHash}`);
+      } catch (arcErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Arc recordBorrow failed (non-fatal):`, arcErr.message);
+      }
       break;
     }
+
     case "repay": {
-      const actualRepay = Math.min(amount, company.debtUSDC);
-      // Draw from liquidity first, then reserve
-      const fromLiq = Math.min(actualRepay, company.liquidityUSDC - 0.5);
-      const fromRes = Math.max(0, actualRepay - Math.max(0, fromLiq));
-      company.liquidityUSDC = Math.max(0, company.liquidityUSDC - Math.max(0, fromLiq));
-      company.reserveUSDC = Math.max(0, company.reserveUSDC - fromRes);
+      const GAS_RESERVE = 0.5;
+      const spendableLiq = Math.max(0, company.liquidityUSDC - GAS_RESERVE);
+      const spendableRes = Math.max(0, company.reserveUSDC - GAS_RESERVE);
+      const actualRepay = Math.min(amount, spendableLiq + spendableRes);
+
+      if (actualRepay < 0.01) break;
+
+      const fromLiquidity = Math.min(actualRepay, spendableLiq);
+      const fromReserve = actualRepay - fromLiquidity;
+      const txRefs: string[] = [];
+
+      // Real Circle: liquidity -> creditFacility (and/or reserve -> creditFacility)
+      try {
+        if (fromLiquidity >= 0.01) {
+          const r1 = await circle.transfer("liquidity", "creditFacility", fromLiquidity);
+          txRefs.push(r1.circleTxRef);
+        }
+        if (fromReserve >= 0.01) {
+          const r2 = await circle.transfer("reserve", "creditFacility", fromReserve);
+          txRefs.push(r2.circleTxRef);
+        }
+        if (txRefs.length > 0) {
+          circleTxRef = txRefs.join("+");
+          console.log(`[CompanyTick:${companyId}] Circle repay tx: ${circleTxRef}`);
+        }
+      } catch (circleErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Circle repay failed (using sim ref):`, circleErr.message);
+      }
+
+      // Update in-memory state
+      company.liquidityUSDC = Math.max(0, company.liquidityUSDC - Math.max(0, fromLiquidity));
+      company.reserveUSDC = Math.max(0, company.reserveUSDC - fromReserve);
       company.debtUSDC = Math.max(0, company.debtUSDC - actualRepay);
+
+      // Real Arc: record repay on-chain
+      try {
+        arcTxHash = await arc.recordRepay(companyAddress, BigInt(Math.round(actualRepay * 1e6)), circleTxRef);
+        console.log(`[CompanyTick:${companyId}] Arc recordRepay: ${arcTxHash}`);
+      } catch (arcErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Arc recordRepay failed (non-fatal):`, arcErr.message);
+      }
       break;
     }
+
     case "rebalance": {
       const from = action.from || "reserve";
       const to = action.to || "liquidity";
-      const transferAmt = Math.min(amount, getBucketBalance(company, from) - 0.5);
-      if (transferAmt > 0.01) {
-        subtractBucket(company, from, transferAmt);
-        addBucket(company, to, transferAmt);
+      const available = getBucketBalance(company, from) - 0.5;
+      const transferAmt = Math.min(amount, Math.max(0, available));
+
+      if (transferAmt < 0.01) break;
+
+      // Real Circle: bucket-to-bucket transfer
+      try {
+        const result = await circle.transfer(
+          from as circle.BucketName,
+          to as circle.BucketName,
+          transferAmt
+        );
+        circleTxRef = result.circleTxRef;
+        console.log(`[CompanyTick:${companyId}] Circle rebalance tx: ${circleTxRef}`);
+      } catch (circleErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Circle rebalance failed (using sim ref):`, circleErr.message);
+      }
+
+      // Update in-memory state
+      subtractBucket(company, from, transferAmt);
+      addBucket(company, to, transferAmt);
+
+      // Real Arc: record rebalance on-chain
+      try {
+        arcTxHash = await arc.recordRebalance(from, to, BigInt(Math.round(transferAmt * 1e6)), circleTxRef);
+        console.log(`[CompanyTick:${companyId}] Arc recordRebalance: ${arcTxHash}`);
+      } catch (arcErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Arc recordRebalance failed (non-fatal):`, arcErr.message);
       }
       break;
     }
+
     case "payment": {
-      const payAmt = Math.min(amount, company.liquidityUSDC - 0.5);
-      if (payAmt > 0.01) {
-        company.liquidityUSDC -= payAmt;
+      const recipient = action.to || "0x0";
+      const payAmt = Math.min(amount, Math.max(0, company.liquidityUSDC - 0.5));
+
+      if (payAmt < 0.01) break;
+
+      // Real Circle: liquidity -> external recipient
+      try {
+        const result = await circle.transfer("liquidity", recipient, payAmt);
+        circleTxRef = result.circleTxRef;
+        console.log(`[CompanyTick:${companyId}] Circle payment tx: ${circleTxRef} -> ${recipient}`);
+      } catch (circleErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Circle payment failed (using sim ref):`, circleErr.message);
       }
+
+      // Update in-memory state
+      company.liquidityUSDC = Math.max(0, company.liquidityUSDC - payAmt);
       store.removeCompanyPendingPayment(companyId);
+
+      // Real Arc: record payment on-chain
+      try {
+        arcTxHash = await arc.recordPayment(companyAddress, recipient, BigInt(Math.round(payAmt * 1e6)), circleTxRef);
+        console.log(`[CompanyTick:${companyId}] Arc recordPayment: ${arcTxHash}`);
+      } catch (arcErr: any) {
+        console.warn(`[CompanyTick:${companyId}] Arc recordPayment failed (non-fatal):`, arcErr.message);
+      }
       break;
     }
   }
@@ -293,8 +403,7 @@ async function executeCompanyAction(
     store.recordCompanyDailySpend(companyId, amount);
   }
 
-  // Log to Arc on-chain (real tx hash if Arc configured, sim hash as fallback)
-  let arcTxHash = `sim-arc-${companyId}-${Date.now().toString(16)}`;
+  // Log decision on Arc with full context
   try {
     const snapshotStr = JSON.stringify({
       hf: snapshot.healthFactor.toFixed(4),
@@ -306,7 +415,12 @@ async function executeCompanyAction(
       company: companyId,
     });
     const rHash = rationaleHash(action.rationale);
-    arcTxHash = await arc.logDecision(snapshotStr, `${action.type}:${amount.toFixed(2)}`, rHash);
+    const decisionHash = await arc.logDecision(snapshotStr, `${action.type}:${amount.toFixed(2)}`, rHash);
+    if (!arcTxHash.startsWith("sim-")) {
+      // Keep the recordBorrow/Repay/etc hash as primary; logDecision is supplementary
+    } else {
+      arcTxHash = decisionHash;
+    }
   } catch (arcErr: any) {
     console.warn(`[CompanyTick:${companyId}] Arc logDecision failed (non-fatal):`, arcErr.message);
   }
@@ -318,7 +432,7 @@ async function executeCompanyAction(
     amountUSDC: amount.toFixed(6),
     healthFactor: snapshot.healthFactor,
     rationale: action.rationale,
-    circleTxRef: simTxRef,
+    circleTxRef,
     arcTxHash,
     companyId,
     trigger: action.trigger || `price=${snapshot.oraclePrice.toFixed(4)}, vol=${snapshot.volatilityPct.toFixed(1)}%, HF=${snapshot.healthFactor.toFixed(2)}`,

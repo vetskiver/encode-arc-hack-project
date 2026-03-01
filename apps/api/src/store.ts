@@ -88,7 +88,7 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
   {
     id: "atlas",
     name: "Atlas Manufacturing",
-    address: "0x0000000000000000000000000000000000000001",
+    address: "0x81008ADD908c9702FA595E942e8430AECEad807F",
     riskProfile: "conservative",
     collateralAsset: "T-Bill",
     oracleSymbol: "USDCUSD",
@@ -126,7 +126,7 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
   {
     id: "northwind",
     name: "Northwind Logistics",
-    address: "0x0000000000000000000000000000000000000002",
+    address: "0x81008ADD908c9702FA595E942e8430AECEad8080",
     riskProfile: "balanced",
     collateralAsset: "ETH",
     oracleSymbol: "ETHUSD",
@@ -165,7 +165,7 @@ const DEFAULT_COMPANIES: CompanyProfile[] = [
   {
     id: "harbor",
     name: "Harbor Health Systems",
-    address: "0x0000000000000000000000000000000000000003",
+    address: "0x81008ADD908c9702FA595E942e8430AECEad8081",
     riskProfile: "growth",
     collateralAsset: "BTC",
     oracleSymbol: "BTCUSD",
@@ -218,7 +218,7 @@ class Store {
   companies: CompanyProfile[] = JSON.parse(JSON.stringify(DEFAULT_COMPANIES));
 
   // Default user for MVP (backwards compat)
-  defaultUser: string = process.env.DEFAULT_COMPANY_ADDRESS || "0x0000000000000000000000000000000000000001";
+  defaultUser: string = process.env.DEFAULT_COMPANY_ADDRESS || "0x81008ADD908c9702FA595E942e8430AECEad807E";
 
   // Track last ts added to prevent double-adds (agentTick + /api/oracle both call addPrice)
   private _lastAddedTs: number = 0;
