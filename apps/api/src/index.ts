@@ -10,6 +10,8 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 const PORT = parseInt(process.env.PORT || "4000", 10);
 const app = createApp();
 
+export default app;
+
 app.listen(PORT, async () => {
   console.log(`[Server] API running on port ${PORT}`);
 
@@ -28,5 +30,5 @@ app.listen(PORT, async () => {
     console.warn("[Server] Could not set on-chain policy:", err.message);
   }
 
-  // ❌ Do NOT auto-start agent loop on Vercel
+
 });
