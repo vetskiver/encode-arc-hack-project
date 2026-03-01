@@ -1,3 +1,5 @@
+import { Redis } from "@upstash/redis";
+
 export interface PendingPayment {
   user: string;
   to: string;
@@ -13,13 +15,12 @@ export interface ActionLog {
   rationale: string;
   circleTxRef: string;
   arcTxHash: string;
-  // V2 enhanced logging
-  trigger?: string;       // what triggered this action (e.g. "volatility 5.2% > threshold 3%")
-  policyRule?: string;    // which policy rule activated (e.g. "liquidityTargetRatio", "reserveRatio")
-  fromBucket?: string;    // source bucket for rebalance
-  toBucket?: string;      // destination bucket for rebalance
-  hfBefore?: number;      // health factor before action
-  hfAfter?: number;       // health factor after action (if available)
+  trigger?: string;
+  policyRule?: string;
+  fromBucket?: string;
+  toBucket?: string;
+  hfBefore?: number;
+  hfAfter?: number;
   liquidityBefore?: number;
   liquidityAfter?: number;
   reserveBefore?: number;
@@ -34,125 +35,155 @@ export interface Telemetry {
   lastSnapshot: any | null;
 }
 
-/** Ring buffer for last K oracle prices */
 const PRICE_HISTORY_SIZE = 20;
 
-import fs from "fs";
-import path from "path";
+// ---------------------------------------------------------------------------
+// Redis keys
+// ---------------------------------------------------------------------------
+const KEYS = {
+  pendingPayments: "store:pendingPayments",
+  priceHistory:    "store:priceHistory",
+  telemetry:       "store:telemetry",
+  actionLogs:      "store:actionLogs",
+  lastAddedTs:     "store:lastAddedTs",
+} as const;
 
-const DATA_DIR = path.resolve(__dirname, "../data");
-const STORE_FILE = path.join(DATA_DIR, "store.json");
+// ---------------------------------------------------------------------------
+// Defaults
+// ---------------------------------------------------------------------------
+const DEFAULT_TELEMETRY: Telemetry = {
+  agentEnabled: false,
+  status: "Monitoring",
+  lastReason: "Agent not started",
+  nextTickAt: 0,
+  lastSnapshot: null,
+};
 
+// ---------------------------------------------------------------------------
+// Redis client (lazy singleton — safe for serverless)
+// ---------------------------------------------------------------------------
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url:   process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+  return _redis;
+}
+
+// ---------------------------------------------------------------------------
+// Store — every method is async and talks directly to Redis.
+// The synchronous `store.telemetry` / `store.actionLogs` surface used by
+// routes has been replaced with async getters below.
+// ---------------------------------------------------------------------------
 class Store {
-  pendingPayments: PendingPayment[] = [];
-  priceHistory: { price: number; ts: number }[] = [];
-  telemetry: Telemetry = {
-    agentEnabled: false,
-    status: "Monitoring",
-    lastReason: "Agent not started",
-    nextTickAt: 0,
-    lastSnapshot: null,
-  };
-  actionLogs: ActionLog[] = [];
+  readonly defaultUser: string =
+    process.env.DEFAULT_COMPANY_ADDRESS ||
+    "0x0000000000000000000000000000000000000001";
 
-  // Default user for MVP
-  defaultUser: string = process.env.DEFAULT_COMPANY_ADDRESS || "0x0000000000000000000000000000000000000001";
+  // ── Telemetry ─────────────────────────────────────────────────────────────
 
-  // Track last ts added to prevent double-adds (agentTick + /api/oracle both call addPrice)
-  private _lastAddedTs: number = 0;
-
-  constructor() {
-    this.load();
+  async getTelemetry(): Promise<Telemetry> {
+    const r = getRedis();
+    const val = await r.get<Telemetry>(KEYS.telemetry);
+    return val ?? { ...DEFAULT_TELEMETRY };
   }
 
-  private load(): void {
-    try {
-      if (fs.existsSync(STORE_FILE)) {
-        const raw = fs.readFileSync(STORE_FILE, "utf-8");
-        const data = JSON.parse(raw);
-        this.pendingPayments = data.pendingPayments || [];
-        this.priceHistory = data.priceHistory || [];
-        this.telemetry = data.telemetry || this.telemetry;
-        this.actionLogs = data.actionLogs || [];
-        this._lastAddedTs = data._lastAddedTs || 0;
-      }
-    } catch (err: any) {
-      console.warn("[Store] Failed to load persisted state:", err.message);
-    }
+  async updateTelemetry(updates: Partial<Telemetry>): Promise<void> {
+    const r = getRedis();
+    const current = await this.getTelemetry();
+    await r.set(KEYS.telemetry, { ...current, ...updates });
   }
 
-  private persist(): void {
-    try {
-      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-      const payload = {
-        pendingPayments: this.pendingPayments,
-        priceHistory: this.priceHistory,
-        telemetry: this.telemetry,
-        actionLogs: this.actionLogs,
-        _lastAddedTs: this._lastAddedTs,
-      };
-      fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2), "utf-8");
-    } catch (err: any) {
-      console.warn("[Store] Failed to persist state:", err.message);
-    }
+  // ── Action logs ───────────────────────────────────────────────────────────
+
+  async getActionLogs(): Promise<ActionLog[]> {
+    const r = getRedis();
+    const val = await r.get<ActionLog[]>(KEYS.actionLogs);
+    return val ?? [];
   }
 
-  addPrice(price: number, ts: number): void {
+  async addLog(log: ActionLog): Promise<void> {
+    const r = getRedis();
+    const logs = await this.getActionLogs();
+    logs.unshift(log);
+    if (logs.length > 100) logs.pop();
+    await r.set(KEYS.actionLogs, logs);
+  }
+
+  // ── Price history ─────────────────────────────────────────────────────────
+
+  async getPriceHistory(): Promise<{ price: number; ts: number }[]> {
+    const r = getRedis();
+    const val = await r.get<{ price: number; ts: number }[]>(KEYS.priceHistory);
+    return val ?? [];
+  }
+
+  async addPrice(price: number, ts: number): Promise<void> {
+    const r = getRedis();
+
     // Deduplicate: don't add same timestamp twice
-    if (ts === this._lastAddedTs) return;
-    this._lastAddedTs = ts;
+    const lastTs = (await r.get<number>(KEYS.lastAddedTs)) ?? 0;
+    if (ts === lastTs) return;
 
-    this.priceHistory.push({ price, ts });
-    if (this.priceHistory.length > PRICE_HISTORY_SIZE) {
-      this.priceHistory.shift();
-    }
-    this.persist();
+    const history = await this.getPriceHistory();
+    history.push({ price, ts });
+    if (history.length > PRICE_HISTORY_SIZE) history.shift();
+
+    await Promise.all([
+      r.set(KEYS.priceHistory, history),
+      r.set(KEYS.lastAddedTs, ts),
+    ]);
   }
 
-  getChangePct(): number {
-    if (this.priceHistory.length < 2) return 0;
-    const oldest = this.priceHistory[0].price;
-    const newest = this.priceHistory[this.priceHistory.length - 1].price;
+  async getChangePct(): Promise<number> {
+    const history = await this.getPriceHistory();
+    if (history.length < 2) return 0;
+    const oldest = history[0].price;
+    const newest = history[history.length - 1].price;
     if (oldest === 0) return 0;
     return ((newest - oldest) / oldest) * 100;
   }
 
-  addLog(log: ActionLog): void {
-    this.actionLogs.unshift(log);
-    if (this.actionLogs.length > 100) {
-      this.actionLogs.pop();
-    }
-    this.persist();
+  async resetPriceHistory(): Promise<void> {
+    const r = getRedis();
+    await Promise.all([
+      r.set(KEYS.priceHistory, []),
+      r.set(KEYS.lastAddedTs, 0),
+    ]);
   }
 
-  getPendingPayment(): PendingPayment | null {
-    return this.pendingPayments.length > 0 ? this.pendingPayments[0] : null;
+  // ── Pending payments ──────────────────────────────────────────────────────
+
+  async getPendingPayments(): Promise<PendingPayment[]> {
+    const r = getRedis();
+    const val = await r.get<PendingPayment[]>(KEYS.pendingPayments);
+    return val ?? [];
   }
 
-  removePendingPayment(): void {
-    this.pendingPayments.shift();
-    this.persist();
+  async getPendingPayment(): Promise<PendingPayment | null> {
+    const payments = await this.getPendingPayments();
+    return payments.length > 0 ? payments[0] : null;
   }
 
-  clearPendingPayments(): void {
-    this.pendingPayments = [];
-    this.persist();
+  async queuePayment(payment: PendingPayment): Promise<void> {
+    const r = getRedis();
+    const payments = await this.getPendingPayments();
+    payments.push(payment);
+    await r.set(KEYS.pendingPayments, payments);
   }
 
-  queuePayment(payment: PendingPayment): void {
-    this.pendingPayments.push(payment);
-    this.persist();
+  async removePendingPayment(): Promise<void> {
+    const r = getRedis();
+    const payments = await this.getPendingPayments();
+    payments.shift();
+    await r.set(KEYS.pendingPayments, payments);
   }
 
-  resetPriceHistory(): void {
-    this.priceHistory = [];
-    this._lastAddedTs = 0;
-    this.persist();
-  }
-
-  updateTelemetry(updates: Partial<Telemetry>): void {
-    this.telemetry = { ...this.telemetry, ...updates };
-    this.persist();
+  async clearPendingPayments(): Promise<void> {
+    await getRedis().set(KEYS.pendingPayments, []);
   }
 }
 

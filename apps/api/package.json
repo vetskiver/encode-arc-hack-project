@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@circlefin/x402-batching": "^1.1.0",
+    "@vercel/node": "^5.6.9",
     "@x402/core": "^2.5.0",
     "@x402/evm": "^2.5.0",
     "axios": "^1.6.0",

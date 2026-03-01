@@ -1,3 +1,4 @@
+import { Redis } from "@upstash/redis";
 import * as arc from "../integrations/arc";
 import * as circle from "../integrations/circle";
 import * as stork from "../integrations/stork";
@@ -15,6 +16,17 @@ import {
   bpsToRatio,
 } from "../utils/math";
 import { rationaleHash } from "../utils/hash";
+
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+  return _redis;
+}
 
 export async function agentTick(user: string): Promise<void> {
   console.log("[AgentTick] Starting tick for user:", user);
@@ -37,10 +49,10 @@ export async function agentTick(user: string): Promise<void> {
     }
 
     // Store price in history
-    store.addPrice(oracle.price, oracle.ts);
-    const changePct = store.getChangePct();
+    await store.addPrice(oracle.price, oracle.ts);
+    const changePct = await store.getChangePct();
 
-    // Update oracle snapshot on contract — non-fatal if method doesn't exist
+    // Update oracle snapshot on contract — non-fatal
     const priceBigInt = stork.priceToBigInt(oracle.price);
     try {
       await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
@@ -53,39 +65,43 @@ export async function agentTick(user: string): Promise<void> {
     const reserveUSDC = await circle.getBalance("reserve");
     const yieldUSDC = await circle.getBalance("yield");
 
-    // 3b. Read yield rate feed (env-driven, with light drift)
+    // 3b. Read yield rate feed
     const yieldData = await getYieldRate();
 
     // 4. Compute snapshot metrics
-    const collateralValueUSDC = computeCollateralValueUSDC(
-      userState.collateralAmount,
-      priceBigInt
-    );
+    const collateralValueUSDC = computeCollateralValueUSDC(userState.collateralAmount, priceBigInt);
     const maxBorrowUSDC = computeMaxBorrow(collateralValueUSDC, policy.ltvBps);
     const healthFactor = computeHealthFactor(maxBorrowUSDC, userState.debtUSDC);
 
-    const pending = store.getPendingPayment();
+    const pending = await store.getPendingPayment();
 
-    // --- V2 policy extensions from env (keep defaults if unset/onchain lacks) ---
-    const liquidityTargetRatio = parseFloat(process.env.LIQUIDITY_TARGET_RATIO || "0.25"); // 25% default
-    const reserveRatio = parseFloat(process.env.RESERVE_RATIO || "0.30"); // 30% default of total USDC
-    const targetHealthRatio = parseFloat(process.env.TARGET_HEALTH || "1.6"); // above minHealth
-    const volatilityThresholdPct = parseFloat(process.env.VOL_THRESHOLD_PCT || "3"); // reuse existing as default
-    const maxYieldAllocPct = parseFloat(process.env.MAX_YIELD_ALLOC_PCT || "0.35"); // 35% cap by default
-    const minTargetYieldPct = parseFloat(process.env.MIN_TARGET_YIELD_PCT || "3"); // only deploy if APY >= 3%
+    // --- V2 policy extensions: read from Redis, fall back to env ---
+    const redis = getRedis();
+    const [ltrRaw, rrRaw, volRaw, thRaw] = await Promise.all([
+      redis.get<string>("policy:liquidityTargetRatio"),
+      redis.get<string>("policy:reserveRatio"),
+      redis.get<string>("policy:volatilityThresholdPct"),
+      redis.get<string>("policy:targetHealthRatio"),
+    ]);
+    const liquidityTargetRatio = parseFloat(ltrRaw ?? process.env.LIQUIDITY_TARGET_RATIO ?? "0.25");
+    const reserveRatio = parseFloat(rrRaw ?? process.env.RESERVE_RATIO ?? "0.30");
+    const targetHealthRatio = parseFloat(thRaw ?? process.env.TARGET_HEALTH ?? "1.6");
+    const volatilityThresholdPct = parseFloat(volRaw ?? process.env.VOL_THRESHOLD_PCT ?? "3");
+    const maxYieldAllocPct = parseFloat(process.env.MAX_YIELD_ALLOC_PCT || "0.35");
+    const minTargetYieldPct = parseFloat(process.env.MIN_TARGET_YIELD_PCT || "3");
 
-    // Normalize policy values: contract stores with 6 decimals, planner/safety need floats
-    // liquidityMinUSDC, perTxMaxUSDC, dailyMaxUSDC come from contract as raw bigint-ish numbers
-    // If they're 0 (policy not set), use sensible defaults so agent has real constraints to work with
+    // Normalize policy values
     const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0
       ? Number(policy.liquidityMinUSDC)
-      : 5 * 1e6; // default: 5 USDC min liquidity (testnet-friendly)
+      : 5 * 1e6;
     const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0
       ? Number(policy.perTxMaxUSDC)
-      : 10 * 1e6; // default: 10 USDC per tx (testnet-friendly)
+      : 10 * 1e6;
     const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0
       ? Number(policy.dailyMaxUSDC)
-      : 50 * 1e6; // default: 50 USDC daily
+      : 50 * 1e6;
+
+    const totalUSDC = liquidityUSDC + reserveUSDC + yieldUSDC;
 
     const snapshot: Snapshot = {
       oraclePrice: oracle.price,
@@ -118,13 +134,9 @@ export async function agentTick(user: string): Promise<void> {
         maxYieldAllocPct,
         minTargetYieldPct,
       },
-      totalUSDC: liquidityUSDC + reserveUSDC + yieldUSDC,
-      liquidityRatio: (liquidityUSDC + reserveUSDC + yieldUSDC) > 0
-        ? liquidityUSDC / (liquidityUSDC + reserveUSDC + yieldUSDC)
-        : 0,
-      reserveRatio: (liquidityUSDC + reserveUSDC + yieldUSDC) > 0
-        ? reserveUSDC / (liquidityUSDC + reserveUSDC + yieldUSDC)
-        : 0,
+      totalUSDC,
+      liquidityRatio: totalUSDC > 0 ? liquidityUSDC / totalUSDC : 0,
+      reserveRatio: totalUSDC > 0 ? reserveUSDC / totalUSDC : 0,
       volatilityPct: Math.abs(changePct),
       yieldRatePct: yieldData.ratePct,
     };
@@ -147,23 +159,22 @@ export async function agentTick(user: string): Promise<void> {
         ? { to: pending.to, amountUSDC: pending.amountUSDC }
         : null,
       liquidityRatio: snapshot.liquidityRatio.toFixed(4),
-          reserveRatio: snapshot.reserveRatio.toFixed(4),
-          volatilityPct: snapshot.volatilityPct.toFixed(2),
-          targetHealth: targetHealthRatio,
-          liquidityTargetRatio,
-          reserveRatioTarget: reserveRatio,
-          maxYieldAllocPct,
-          minTargetYieldPct,
-          yieldRatePct: yieldData.ratePct,
-          yieldRateStale: yieldData.stale,
-          // V2: surface volatility threshold to frontend
-          volatilityThreshold: volatilityThresholdPct,
-        });
+      reserveRatio: snapshot.reserveRatio.toFixed(4),
+      volatilityPct: snapshot.volatilityPct.toFixed(2),
+      targetHealth: targetHealthRatio,
+      liquidityTargetRatio,
+      reserveRatioTarget: reserveRatio,
+      maxYieldAllocPct,
+      minTargetYieldPct,
+      yieldRatePct: yieldData.ratePct,
+      yieldRateStale: yieldData.stale,
+      volatilityThreshold: volatilityThresholdPct,
+    });
 
     // 5. Planner proposes plan
     const proposal = planner(snapshot);
     console.log("[AgentTick] Planner proposal:", proposal.rationale);
-    console.log("[AgentTick] Planner actions:", proposal.actions.length, proposal.actions.map(a => `${a.type}:${a.amountUSDC}`));
+    console.log("[AgentTick] Planner actions:", proposal.actions.length, proposal.actions.map((a: any) => `${a.type}:${a.amountUSDC}`));
 
     // 6. Safety controller validates
     const safetyResult = safetyController(snapshot, proposal);
@@ -182,7 +193,7 @@ export async function agentTick(user: string): Promise<void> {
         console.warn("[AgentTick] logDecision failed:", logErr.message);
       }
 
-      store.addLog({
+      await store.addLog({
         ts: Date.now(),
         action: "BLOCKED",
         amountUSDC: "0",
@@ -200,11 +211,11 @@ export async function agentTick(user: string): Promise<void> {
       await executeAction(action, snapshot, user);
 
       if (action.type === "payment" && pending) {
-        store.removePendingPayment();
+        await store.removePendingPayment();
       }
     }
 
-    // 8. V2: Post-execution snapshot refresh for delta logging
+    // 8. Post-execution snapshot refresh
     if (safetyResult.plan.actions.length > 0) {
       try {
         const postLiquidity = await circle.getBalance("liquidity");
@@ -216,15 +227,16 @@ export async function agentTick(user: string): Promise<void> {
         const postHF = computeHealthFactor(postMaxBorrow, postUserState.debtUSDC);
         const postTotal = postLiquidity + postReserve + postYield;
 
-        // Update the most recent action logs with post-execution state
-        const recentLogs = store.actionLogs.slice(0, safetyResult.plan.actions.length);
+        // Update recent action logs with post-execution HF
+        const recentLogs = (await store.getActionLogs()).slice(0, safetyResult.plan.actions.length);
         for (const log of recentLogs) {
           log.hfAfter = postHF;
           log.liquidityAfter = postLiquidity;
           log.reserveAfter = postReserve;
         }
 
-        // Update telemetry snapshot with post-execution values
+        const postPending = await store.getPendingPayment();
+
         setLastSnapshot({
           oraclePrice: oracle.price,
           oracleTs: oracle.ts,
@@ -239,8 +251,8 @@ export async function agentTick(user: string): Promise<void> {
           liquidityUSDC: postLiquidity.toFixed(6),
           reserveUSDC: postReserve.toFixed(6),
           yieldUSDC: postYield.toFixed(6),
-          pendingPayment: store.getPendingPayment()
-            ? { to: store.getPendingPayment()!.to, amountUSDC: store.getPendingPayment()!.amountUSDC }
+          pendingPayment: postPending
+            ? { to: postPending.to, amountUSDC: postPending.amountUSDC }
             : null,
           liquidityRatio: postTotal > 0 ? (postLiquidity / postTotal).toFixed(4) : "0",
           reserveRatio: postTotal > 0 ? (postReserve / postTotal).toFixed(4) : "0",
@@ -272,9 +284,7 @@ export async function agentTick(user: string): Promise<void> {
       setLastReason(`Risk: HF=${healthFactor.toFixed(2)}, vol=${changePct.toFixed(1)}%`);
     } else if (safetyResult.plan.actions.length > 0) {
       setStatus("Monitoring");
-      setLastReason(
-        `Executed ${safetyResult.plan.actions.length} action(s): ${safetyResult.plan.rationale}`
-      );
+      setLastReason(`Executed ${safetyResult.plan.actions.length} action(s): ${safetyResult.plan.rationale}`);
     } else {
       setStatus("Monitoring");
       setLastReason(`All healthy. HF=${healthFactor.toFixed(2)}, liquidity=${liquidityUSDC.toFixed(2)}`);

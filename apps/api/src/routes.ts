@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { Redis } from "@upstash/redis";
 import { store } from "./store";
 import { startAgentLoop, stopAgentLoop } from "./agent/agentLoop";
 import { agentTick } from "./agent/agentTick";
@@ -19,11 +20,21 @@ const router = Router();
 router.use(x402Routes);
 type BucketName = "liquidity" | "reserve" | "yield" | "creditFacility";
 
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+  return _redis;
+}
+
 // GET /api/status
 router.get("/api/status", async (_req: Request, res: Response) => {
   try {
-    const user = (_req.query.user as string) || store.defaultUser;
-    const t = store.telemetry;
+    const t = await store.getTelemetry();
     res.json({
       agentEnabled: t.agentEnabled,
       status: t.status,
@@ -37,15 +48,17 @@ router.get("/api/status", async (_req: Request, res: Response) => {
 });
 
 // POST /api/agent/start
-router.post("/api/agent/start", (_req: Request, res: Response) => {
+router.post("/api/agent/start", async (_req: Request, res: Response) => {
   const user = store.defaultUser;
   startAgentLoop(user);
+  await store.updateTelemetry({ agentEnabled: true });
   res.json({ started: true });
 });
 
 // POST /api/agent/stop
-router.post("/api/agent/stop", (_req: Request, res: Response) => {
+router.post("/api/agent/stop", async (_req: Request, res: Response) => {
   stopAgentLoop();
+  await store.updateTelemetry({ agentEnabled: false });
   res.json({ stopped: true });
 });
 
@@ -54,7 +67,8 @@ router.post("/api/agent/tick", async (_req: Request, res: Response) => {
   try {
     const user = store.defaultUser;
     await agentTick(user);
-    res.json({ executed: true, telemetry: store.telemetry });
+    const telemetry = await store.getTelemetry();
+    res.json({ executed: true, telemetry });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -64,9 +78,7 @@ router.post("/api/agent/tick", async (_req: Request, res: Response) => {
 router.get("/api/oracle", async (_req: Request, res: Response) => {
   try {
     const data = await stork.getPrice();
-    // NOTE: do NOT call store.addPrice here — agentTick already does it.
-    // Calling it here too causes double-entries and inflated changePct.
-    const changePct = store.getChangePct();
+    const changePct = await store.getChangePct();
     res.json({
       price: data.price,
       ts: data.ts,
@@ -88,11 +100,10 @@ router.post("/api/collateral/register", async (req: Request, res: Response) => {
       return;
     }
     const user = store.defaultUser;
-    // amount readable units -> store as 18-decimal bigint on contract
     const amountBigInt = BigInt(Math.round(parseFloat(amount) * 1e18));
     const txHash = await arc.registerCollateral(user, amountBigInt);
 
-    store.addLog({
+    await store.addLog({
       ts: Date.now(),
       action: "registerCollateral",
       amountUSDC: amount,
@@ -109,7 +120,7 @@ router.post("/api/collateral/register", async (req: Request, res: Response) => {
 });
 
 // POST /api/payment/request
-router.post("/api/payment/request", (req: Request, res: Response) => {
+router.post("/api/payment/request", async (req: Request, res: Response) => {
   try {
     const { to, amountUSDC } = req.body;
     if (!to || !amountUSDC) {
@@ -117,7 +128,7 @@ router.post("/api/payment/request", (req: Request, res: Response) => {
       return;
     }
     const user = store.defaultUser;
-    store.queuePayment({
+    await store.queuePayment({
       user,
       to,
       amountUSDC,
@@ -144,31 +155,22 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       return;
     }
 
-    // --- Safety checks: same rules as agent ---
     const userState = await arc.getUserState(user);
     const policy = await arc.getPolicy();
-
-    // Get current oracle price to compute health factor
     const oracle = await stork.getPrice();
     const priceBigInt = stork.priceToBigInt(oracle.price);
 
-    // Update oracle snapshot on contract (non-fatal)
     try {
       await arc.setOracleSnapshot(priceBigInt, Math.floor(oracle.ts / 1000));
     } catch {}
 
-    const collateralValueUSDC = computeCollateralValueUSDC(
-      userState.collateralAmount,
-      priceBigInt
-    );
+    const collateralValueUSDC = computeCollateralValueUSDC(userState.collateralAmount, priceBigInt);
     const maxBorrowUSDC = computeMaxBorrow(collateralValueUSDC, policy.ltvBps);
     const healthFactor = computeHealthFactor(maxBorrowUSDC, userState.debtUSDC);
     const minHealth = bpsToRatio(policy.minHealthBps);
     const targetHealthRatio = parseFloat(process.env.TARGET_HEALTH || "1.6");
-    const emergencyHealthBps = policy.emergencyHealthBps;
-    const emergencyHealth = bpsToRatio(emergencyHealthBps);
+    const emergencyHealth = bpsToRatio(policy.emergencyHealthBps);
 
-    // Block borrow if HF < minHealth or in emergency
     if (healthFactor < minHealth) {
       res.status(403).json({
         error: `Borrow blocked: health factor ${healthFactor.toFixed(2)} < minHealth ${minHealth.toFixed(2)}. Repay debt first.`,
@@ -176,7 +178,6 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       return;
     }
 
-    // Block borrow in emergency mode
     if (healthFactor < emergencyHealth) {
       res.status(403).json({
         error: `Borrow blocked: health factor ${healthFactor.toFixed(2)} is in emergency zone (< ${emergencyHealth.toFixed(2)}).`,
@@ -184,10 +185,7 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       return;
     }
 
-    // Per-tx max check
-    const rawPerTxMax = Number(policy.perTxMaxUSDC) > 0
-      ? Number(policy.perTxMaxUSDC)
-      : 10 * 1e6;
+    const rawPerTxMax = Number(policy.perTxMaxUSDC) > 0 ? Number(policy.perTxMaxUSDC) : 10 * 1e6;
     const perTxMax = rawPerTxMax / 1e6;
     if (perTxMax > 0 && amount > perTxMax) {
       res.status(403).json({
@@ -196,7 +194,6 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       return;
     }
 
-    // targetHealth headroom check — cap borrow to maintain targetHealth
     const currentDebt = Number(userState.debtUSDC) / 1e6;
     const maxBorrow = Number(maxBorrowUSDC) / 1e6;
     const maxAllowedLtv = maxBorrow - currentDebt;
@@ -218,16 +215,10 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       return;
     }
 
-    // --- Safety passed — execute borrow ---
     const amountBigInt = numberToUSDC(amount);
-
-    // Circle transfer: CreditFacility -> Liquidity
     const result = await circle.transfer("creditFacility", "liquidity", amount);
-
-    // Record on Arc
     const arcTxHash = await arc.recordBorrow(user, amountBigInt, result.circleTxRef);
 
-    // Log decision (non-fatal)
     try {
       const rHash = rationaleHash(`Manual borrow of ${amount} USDC`);
       await arc.logDecision(
@@ -237,7 +228,7 @@ router.post("/api/manual/borrow", async (req: Request, res: Response) => {
       );
     } catch {}
 
-    store.addLog({
+    await store.addLog({
       ts: Date.now(),
       action: "borrow",
       amountUSDC: amount.toFixed(6),
@@ -263,40 +254,30 @@ router.post("/api/manual/repay", async (req: Request, res: Response) => {
     }
 
     const amount = parseFloat(amountUSDC);
-    const amountBigInt = numberToUSDC(amount);
-
-    // Pre-check to avoid revert: don’t let user repay more than current debt
-    const state = await arc.getUserState(user);
-    if (amountBigInt > state.debtUSDC) {
-      const debtReadable = (Number(state.debtUSDC) / 1e6).toFixed(6);
-      res
-        .status(400)
-        .json({ error: `Repay exceeds debt. Current debt: ${debtReadable} USDC` });
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: "amountUSDC must be a positive number" });
       return;
     }
 
-    // Circle transfer: Liquidity -> CreditFacility
+    const amountBigInt = numberToUSDC(amount);
     const result = await circle.transfer("liquidity", "creditFacility", amount);
-
-    // Record on Arc
     const arcTxHash = await arc.recordRepay(user, amountBigInt, result.circleTxRef);
 
-    // Log decision (non-fatal)
     try {
-      const rHash = rationaleHash(`Manual repay of ${amountUSDC} USDC`);
+      const rHash = rationaleHash(`Manual repay of ${amount} USDC`);
       await arc.logDecision(
-        JSON.stringify({ manual: true, amount: amountUSDC }),
-        `repay:${amountUSDC}`,
+        JSON.stringify({ manual: true, amount }),
+        `repay:${amount}`,
         rHash
       );
     } catch {}
 
-    store.addLog({
+    await store.addLog({
       ts: Date.now(),
       action: "repay",
-      amountUSDC,
+      amountUSDC: amount.toFixed(6),
       healthFactor: 0,
-      rationale: `Manual repay of ${amountUSDC} USDC`,
+      rationale: `Manual repay of ${amount} USDC`,
       circleTxRef: result.circleTxRef,
       arcTxHash,
     });
@@ -317,10 +298,9 @@ router.post("/api/user/reset", async (req: Request, res: Response) => {
     }
 
     const arcTxHash = await arc.resetUser(user);
-    // Also clear any pending vendor payments locally so UI matches on-chain reset
-    store.clearPendingPayments();
+    await store.clearPendingPayments();
 
-    store.addLog({
+    await store.addLog({
       ts: Date.now(),
       action: "resetUser",
       amountUSDC: "0",
@@ -341,41 +321,21 @@ router.post("/api/manual/rebalance", async (req: Request, res: Response) => {
   try {
     const { user, fromBucket, toBucket, amountUSDC } = req.body;
     if (!user || !fromBucket || !toBucket || !amountUSDC) {
-      res
-        .status(400)
-        .json({ error: "user, fromBucket, toBucket, amountUSDC required" });
+      res.status(400).json({ error: "user, fromBucket, toBucket, amountUSDC required" });
       return;
     }
 
-    const validBuckets: BucketName[] = [
-      "liquidity",
-      "reserve",
-      "yield",
-      "creditFacility",
-    ];
-    if (
-      !validBuckets.includes(fromBucket) ||
-      !validBuckets.includes(toBucket)
-    ) {
+    const validBuckets: BucketName[] = ["liquidity", "reserve", "yield", "creditFacility"];
+    if (!validBuckets.includes(fromBucket) || !validBuckets.includes(toBucket)) {
       res.status(400).json({ error: "invalid bucket" });
       return;
     }
 
     const amount = parseFloat(amountUSDC);
     const amountBigInt = numberToUSDC(amount);
-
-    // Circle transfer between buckets
     const result = await circle.transfer(fromBucket, toBucket, amount);
+    const arcTxHash = await arc.recordRebalance(fromBucket, toBucket, amountBigInt, result.circleTxRef);
 
-    // Record on Arc
-    const arcTxHash = await arc.recordRebalance(
-      fromBucket,
-      toBucket,
-      amountBigInt,
-      result.circleTxRef
-    );
-
-    // Log decision
     const rationale = `Manual rebalance ${amountUSDC} from ${fromBucket} to ${toBucket}`;
     const rHash = rationaleHash(rationale);
     await arc.logDecision(
@@ -384,7 +344,7 @@ router.post("/api/manual/rebalance", async (req: Request, res: Response) => {
       rHash
     );
 
-    store.addLog({
+    await store.addLog({
       ts: Date.now(),
       action: "rebalance",
       amountUSDC,
@@ -401,25 +361,32 @@ router.post("/api/manual/rebalance", async (req: Request, res: Response) => {
 });
 
 // GET /api/logs
-router.get("/api/logs", (_req: Request, res: Response) => {
-  res.json(store.actionLogs);
-});
-
-// POST /api/oracle/override —  demo purposes
-// *CHECK* also resets price history so changePct doesn't spike from old prices
-router.post("/api/oracle/override", (req: Request, res: Response) => {
-  const { price } = req.body;
-  if (typeof price !== "number" || price <= 0) {
-    res.status(400).json({ error: "price must be a positive number" });
-    return;
+router.get("/api/logs", async (_req: Request, res: Response) => {
+  try {
+    const logs = await store.getActionLogs();
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-  stork.setSimulatedPrice(price);
-  // Reset price history so the change is computed cleanly from this new base
-  store.resetPriceHistory();
-  res.json({ overridden: true, price });
 });
 
-// POST /api/oracle/override/delta — apply percentage drift for 60s (pauses Stork fetch)
+// POST /api/oracle/override
+router.post("/api/oracle/override", async (req: Request, res: Response) => {
+  try {
+    const { price } = req.body;
+    if (typeof price !== "number" || price <= 0) {
+      res.status(400).json({ error: "price must be a positive number" });
+      return;
+    }
+    stork.setSimulatedPrice(price);
+    await store.resetPriceHistory();
+    res.json({ overridden: true, price });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/oracle/override/delta
 router.post("/api/oracle/override/delta", async (req: Request, res: Response) => {
   try {
     const { pct } = req.body;
@@ -434,7 +401,7 @@ router.post("/api/oracle/override/delta", async (req: Request, res: Response) =>
       return;
     }
     stork.setSimulatedPrice(price);
-    store.resetPriceHistory();
+    await store.resetPriceHistory();
     res.json({
       overridden: true,
       basePrice: current.price,
@@ -447,14 +414,14 @@ router.post("/api/oracle/override/delta", async (req: Request, res: Response) =>
   }
 });
 
-// POST /api/policy/set — for demo setup, sets policy on contract
+// POST /api/policy/set
 router.post("/api/policy/set", async (req: Request, res: Response) => {
   try {
     const {
       ltvBps = 6000,
       minHealthBps = 14000,
       emergencyHealthBps = 12000,
-      liquidityMinUSDC = 500,   // dollar amount
+      liquidityMinUSDC = 500,
       perTxMaxUSDC = 10000,
       dailyMaxUSDC = 50000,
     } = req.body;
@@ -473,20 +440,22 @@ router.post("/api/policy/set", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/policy — V2: return current policy parameters (on-chain + env)
+// GET /api/policy
 router.get("/api/policy", async (_req: Request, res: Response) => {
   try {
+    const redis = getRedis();
     const policy = await arc.getPolicy();
 
-    const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0
-      ? Number(policy.liquidityMinUSDC) / 1e6
-      : 5;
-    const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0
-      ? Number(policy.perTxMaxUSDC) / 1e6
-      : 10;
-    const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0
-      ? Number(policy.dailyMaxUSDC) / 1e6
-      : 50;
+    const liquidityMinUSDC = Number(policy.liquidityMinUSDC) > 0 ? Number(policy.liquidityMinUSDC) / 1e6 : 5;
+    const perTxMaxUSDC = Number(policy.perTxMaxUSDC) > 0 ? Number(policy.perTxMaxUSDC) / 1e6 : 10;
+    const dailyMaxUSDC = Number(policy.dailyMaxUSDC) > 0 ? Number(policy.dailyMaxUSDC) / 1e6 : 50;
+
+    const [ltrRaw, rrRaw, volRaw, thRaw] = await Promise.all([
+      redis.get<string>("policy:liquidityTargetRatio"),
+      redis.get<string>("policy:reserveRatio"),
+      redis.get<string>("policy:volatilityThresholdPct"),
+      redis.get<string>("policy:targetHealthRatio"),
+    ]);
 
     res.json({
       ltvBps: policy.ltvBps,
@@ -495,66 +464,56 @@ router.get("/api/policy", async (_req: Request, res: Response) => {
       liquidityMinUSDC,
       perTxMaxUSDC,
       dailyMaxUSDC,
-      liquidityTargetRatio: parseFloat(process.env.LIQUIDITY_TARGET_RATIO || "0.25"),
-      reserveRatio: parseFloat(process.env.RESERVE_RATIO || "0.30"),
-      volatilityThresholdPct: parseFloat(process.env.VOL_THRESHOLD_PCT || "3"),
-      targetHealthRatio: parseFloat(process.env.TARGET_HEALTH || "1.6"),
+      liquidityTargetRatio: parseFloat(ltrRaw ?? process.env.LIQUIDITY_TARGET_RATIO ?? "0.25"),
+      reserveRatio: parseFloat(rrRaw ?? process.env.RESERVE_RATIO ?? "0.30"),
+      volatilityThresholdPct: parseFloat(volRaw ?? process.env.VOL_THRESHOLD_PCT ?? "3"),
+      targetHealthRatio: parseFloat(thRaw ?? process.env.TARGET_HEALTH ?? "1.6"),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/policy/update — V2: update env-driven policy parameters at runtime
-router.post("/api/policy/update", (req: Request, res: Response) => {
+// POST /api/policy/update — persists to Redis so it survives across serverless invocations
+router.post("/api/policy/update", async (req: Request, res: Response) => {
   try {
-    const {
-      liquidityTargetRatio,
-      reserveRatio,
-      volatilityThresholdPct,
-      targetHealthRatio,
-    } = req.body;
+    const redis = getRedis();
+    const { liquidityTargetRatio, reserveRatio, volatilityThresholdPct, targetHealthRatio } = req.body;
 
-    // Validate and apply updates
     if (liquidityTargetRatio !== undefined) {
       const v = parseFloat(liquidityTargetRatio);
-      if (v < 0 || v > 1) {
-        res.status(400).json({ error: "liquidityTargetRatio must be 0-1" });
-        return;
-      }
-      process.env.LIQUIDITY_TARGET_RATIO = v.toString();
+      if (v < 0 || v > 1) { res.status(400).json({ error: "liquidityTargetRatio must be 0-1" }); return; }
+      await redis.set("policy:liquidityTargetRatio", v.toString());
     }
     if (reserveRatio !== undefined) {
       const v = parseFloat(reserveRatio);
-      if (v < 0 || v > 1) {
-        res.status(400).json({ error: "reserveRatio must be 0-1" });
-        return;
-      }
-      process.env.RESERVE_RATIO = v.toString();
+      if (v < 0 || v > 1) { res.status(400).json({ error: "reserveRatio must be 0-1" }); return; }
+      await redis.set("policy:reserveRatio", v.toString());
     }
     if (volatilityThresholdPct !== undefined) {
       const v = parseFloat(volatilityThresholdPct);
-      if (v <= 0 || v > 100) {
-        res.status(400).json({ error: "volatilityThresholdPct must be 0-100" });
-        return;
-      }
-      process.env.VOL_THRESHOLD_PCT = v.toString();
+      if (v <= 0 || v > 100) { res.status(400).json({ error: "volatilityThresholdPct must be 0-100" }); return; }
+      await redis.set("policy:volatilityThresholdPct", v.toString());
     }
     if (targetHealthRatio !== undefined) {
       const v = parseFloat(targetHealthRatio);
-      if (v < 1) {
-        res.status(400).json({ error: "targetHealthRatio must be >= 1" });
-        return;
-      }
-      process.env.TARGET_HEALTH = v.toString();
+      if (v < 1) { res.status(400).json({ error: "targetHealthRatio must be >= 1" }); return; }
+      await redis.set("policy:targetHealthRatio", v.toString());
     }
+
+    const [ltrRaw, rrRaw, volRaw, thRaw] = await Promise.all([
+      redis.get<string>("policy:liquidityTargetRatio"),
+      redis.get<string>("policy:reserveRatio"),
+      redis.get<string>("policy:volatilityThresholdPct"),
+      redis.get<string>("policy:targetHealthRatio"),
+    ]);
 
     res.json({
       updated: true,
-      liquidityTargetRatio: parseFloat(process.env.LIQUIDITY_TARGET_RATIO || "0.25"),
-      reserveRatio: parseFloat(process.env.RESERVE_RATIO || "0.30"),
-      volatilityThresholdPct: parseFloat(process.env.VOL_THRESHOLD_PCT || "3"),
-      targetHealthRatio: parseFloat(process.env.TARGET_HEALTH || "1.6"),
+      liquidityTargetRatio: parseFloat(ltrRaw ?? process.env.LIQUIDITY_TARGET_RATIO ?? "0.25"),
+      reserveRatio: parseFloat(rrRaw ?? process.env.RESERVE_RATIO ?? "0.30"),
+      volatilityThresholdPct: parseFloat(volRaw ?? process.env.VOL_THRESHOLD_PCT ?? "3"),
+      targetHealthRatio: parseFloat(thRaw ?? process.env.TARGET_HEALTH ?? "1.6"),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

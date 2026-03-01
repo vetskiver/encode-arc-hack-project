@@ -28,3 +28,6 @@ dev-controlled-projects/.env
 hardhat/cache/
 hardhat/artifacts/
 typechain-types/
+
+.vercel
+.env*.local
