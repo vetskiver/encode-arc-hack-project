@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "echo \"skip build\"",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "demo:buyer": "ts-node scripts/demo-buyer.ts"
   },
   "dependencies": {
     "@circlefin/x402-batching": "^1.1.0",

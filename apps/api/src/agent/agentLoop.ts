@@ -1,4 +1,5 @@
 import { agentTick } from "./agentTick";
+import { companyAgentTick } from "./companyAgentTick";
 import { store } from "../store";
 import { setAgentEnabled, setNextTickAt, setStatus, setLastReason } from "./telemetry";
 
@@ -13,12 +14,22 @@ export function startAgentLoop(user: string): void {
     return;
   }
 
+  // Enable all companies
+  for (const id of store.getAllCompanyIds()) {
+    store.updateCompanyTelemetry(id, {
+      agentEnabled: true,
+      status: "Monitoring",
+      lastReason: "Agent started",
+      nextTickAt: Date.now() + TICK_MS,
+    });
+  }
+
   setAgentEnabled(true);
   setStatus("Monitoring");
   setLastReason("Agent started");
   setNextTickAt(Date.now() + TICK_MS);
 
-  console.log(`[AgentLoop] Starting loop every ${TICK_MS}ms for user: ${user}`);
+  console.log(`[AgentLoop] Starting loop every ${TICK_MS}ms for all companies`);
 
   intervalHandle = setInterval(async () => {
     if (ticking) {
@@ -26,9 +37,26 @@ export function startAgentLoop(user: string): void {
       return;
     }
     ticking = true;
-    setNextTickAt(Date.now() + TICK_MS);
+    const nextTick = Date.now() + TICK_MS;
+    setNextTickAt(nextTick);
+
+    // Update next tick for all companies
+    for (const id of store.getAllCompanyIds()) {
+      store.updateCompanyTelemetry(id, { nextTickAt: nextTick });
+    }
+
     try {
+      // Run the original agent tick (for Arc contract + Circle wallet state)
       await agentTick(user);
+
+      // Run per-company simulated ticks
+      for (const id of store.getAllCompanyIds()) {
+        try {
+          await companyAgentTick(id);
+        } catch (err: any) {
+          console.error(`[AgentLoop] Company ${id} tick error:`, err.message);
+        }
+      }
     } catch (err: any) {
       console.error("[AgentLoop] Tick error:", err.message);
     } finally {
@@ -42,6 +70,17 @@ export function stopAgentLoop(): void {
     clearInterval(intervalHandle);
     intervalHandle = null;
   }
+
+  // Stop all companies
+  for (const id of store.getAllCompanyIds()) {
+    store.updateCompanyTelemetry(id, {
+      agentEnabled: false,
+      status: "Monitoring",
+      lastReason: "Agent stopped",
+      nextTickAt: 0,
+    });
+  }
+
   setAgentEnabled(false);
   setStatus("Monitoring");
   setLastReason("Agent stopped");

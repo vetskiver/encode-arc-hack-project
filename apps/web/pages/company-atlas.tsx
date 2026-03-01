@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { getStatus, getLogs } from "../lib/api";
-import { StatusResponse, ActionLog } from "../lib/types";
+import { getCompanyStatus, getLogs, getPlatformSummary } from "../lib/api";
+import { StatusResponse, ActionLog, PlatformSummary } from "../lib/types";
 import HeaderStatusBar from "../components/HeaderStatusBar";
 import PlatformActivityFeed from "../components/PlatformActivityFeed";
 import RiskOverview from "../components/RiskOverview";
@@ -24,6 +24,7 @@ const COMPANY = {
 
 export default function CompanyAtlasPage() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [platform, setPlatform] = useState<PlatformSummary | null>(null);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -31,9 +32,10 @@ export default function CompanyAtlasPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [s, l] = await Promise.all([getStatus(), getLogs()]);
+      const [s, l, p] = await Promise.all([getCompanyStatus("atlas"), getLogs(), getPlatformSummary()]);
       setStatus(s);
       setLogs(l);
+      setPlatform(p);
       setError("");
     } catch (err: any) {
       setError(err?.message || String(err));
@@ -49,8 +51,8 @@ export default function CompanyAtlasPage() {
   return (
   <div style={{ ...styles.page, paddingLeft: leftPad }}>
     <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-    <HeaderStatusBar status={status} />
-    <PlatformOverview status={status} />
+    <HeaderStatusBar status={status} platform={platform} title="Atlas Manufacturing" />
+    <PlatformOverview status={status} platform={platform} />
 
     {error && <div style={styles.error}>Backend unreachable: {error}</div>}
 
@@ -70,11 +72,11 @@ export default function CompanyAtlasPage() {
           snapshot={status?.snapshot || null}
         />
         <PaymentRequestForm defaultUser={COMPANY.address} />
-      </div> 
+      </div>
 
       <PlatformActivityFeed logs={logs} />
 
-      
+
     </div>
   </div>
 );

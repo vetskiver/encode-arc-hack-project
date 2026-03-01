@@ -19,13 +19,24 @@ export interface Snapshot {
   targetHealth?: number;
   liquidityTargetRatio?: number;
   reserveRatioTarget?: number;
-  // V2: volatility threshold surfaced from policy
   volatilityThreshold?: number;
-  // V3: yield policy surfaces
   yieldRatePct?: number;
   yieldRateStale?: boolean;
   maxYieldAllocPct?: number;
   minTargetYieldPct?: number;
+  companyPolicy?: {
+    ltvBps: number;
+    minHealthBps: number;
+    emergencyHealthBps: number;
+    riskProfile: string;
+  };
+  // RWA collateral info
+  collateralAsset?: string;
+  oracleSymbol?: string;
+  // Daily spend tracking
+  dailySpentUSDC?: number;
+  dailyMaxUSDC?: number;
+  dailyRemainingUSDC?: number;
 }
 
 export interface StatusResponse {
@@ -34,6 +45,12 @@ export interface StatusResponse {
   lastReason: string;
   nextTickAt: number;
   snapshot: Snapshot | null;
+  company?: {
+    id: string;
+    name: string;
+    riskProfile: string;
+    policy: any;
+  };
 }
 
 export interface OracleResponse {
@@ -52,7 +69,7 @@ export interface ActionLog {
   rationale: string;
   circleTxRef: string;
   arcTxHash: string;
-  // V2 enhanced logging
+  companyId?: string;
   trigger?: string;
   policyRule?: string;
   fromBucket?: string;
@@ -65,7 +82,6 @@ export interface ActionLog {
   reserveAfter?: number;
 }
 
-// V2: Policy response from GET /api/policy
 export interface PolicyResponse {
   ltvBps: number;
   minHealthBps: number;
@@ -77,4 +93,34 @@ export interface PolicyResponse {
   reserveRatio: number;
   volatilityThresholdPct: number;
   targetHealthRatio: number;
+}
+
+export interface CompanySummary {
+  id: string;
+  name: string;
+  riskProfile: string;
+  collateralValue: number;
+  debt: number;
+  healthFactor: number;
+  liquidity: number;
+  reserve: number;
+  status: string;
+  lastReason: string;
+}
+
+export interface PlatformSummary {
+  totalCollateralValue: number;
+  totalDebt: number;
+  totalLiquidity: number;
+  weightedHealthFactor: number;
+  worstHealthFactor: number;
+  systemRisk: "healthy" | "warning" | "critical";
+  companies: CompanySummary[];
+  oracle: {
+    price: number;
+    ts: number;
+    source: string;
+    stale: boolean;
+    changePct: number;
+  };
 }

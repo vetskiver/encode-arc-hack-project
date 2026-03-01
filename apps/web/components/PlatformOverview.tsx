@@ -1,22 +1,12 @@
 import React from "react";
-import { StatusResponse } from "../lib/types";
+import { StatusResponse, PlatformSummary } from "../lib/types";
+import { fmtUSD, fmtUSDC } from "../lib/format";
 
 type Props = {
   status: StatusResponse | null;
+  platform?: PlatformSummary | null;
   title?: string;
 };
-
-function formatNumber(n: number, opts?: Intl.NumberFormatOptions) {
-  return new Intl.NumberFormat(undefined, opts).format(n);
-}
-
-function formatUSDC(n: number) {
-  return `${formatNumber(n, { maximumFractionDigits: 0 })} USDC`;
-}
-
-function formatUSD(n: number) {
-  return `$${formatNumber(n, { maximumFractionDigits: 0 })}`;
-}
 
 function riskFromHF(hf?: number | null) {
   if (hf == null) return { label: "Unknown", tone: "muted" as const };
@@ -27,64 +17,58 @@ function riskFromHF(hf?: number | null) {
 
 function secondsUntil(nextTickAt: any): number | null {
   if (nextTickAt == null) return null;
-
-  // If it’s already a number and looks like "seconds remaining"
   if (typeof nextTickAt === "number" && nextTickAt < 1e9) return Math.max(0, Math.round(nextTickAt));
-
-  // Otherwise treat it like a timestamp (ms or ISO string)
   const t = typeof nextTickAt === "number" ? nextTickAt : new Date(nextTickAt).getTime();
   if (!Number.isFinite(t)) return null;
-
   const delta = Math.round((t - Date.now()) / 1000);
   return Math.max(0, delta);
 }
 
-export default function PlatformOverview({ status, title }: Props) {
-  const snap: any = status?.snapshot ?? null;
+function systemRiskLabel(risk?: string) {
+  if (risk === "critical") return { label: "Red (Critical)", tone: "bad" as const };
+  if (risk === "warning") return { label: "Amber (Warning)", tone: "warn" as const };
+  if (risk === "healthy") return { label: "Green (Healthy)", tone: "good" as const };
+  return { label: "Unknown", tone: "muted" as const };
+}
+
+export default function PlatformOverview({ status, platform, title }: Props) {
   const titleText = title ?? "Platform Overview";
-
-  // 🔧 Map these to your real fields if needed:
-  const liquidityPoolUSDC =
-    snap?.liquidityPoolUSDC ??
-    (snap?.liquidity ?? 0) + (snap?.reserve ?? 0) + (snap?.yield ?? 0);
-
-  const outstandingCreditUSDC = snap?.debtUSDC ?? snap?.debt ?? 0;
-
-  const aggregateCollateralUSD =
-    snap?.aggregateCollateralUSD ?? snap?.collateralValueUSD ?? snap?.collateralValue ?? 0;
-
-  const hf = snap?.healthFactor ?? snap?.hf ?? null;
-  const risk = riskFromHF(hf);
-
   const agentActive = status?.agentEnabled ?? false;
-  const oracleSource = (status as any)?.oracleSource ?? "STORK (Live)";
-
-  // Your file shows nextTickAt exists — show countdown if it’s a timestamp.
   const nextEvalSeconds = secondsUntil((status as any)?.nextTickAt);
+
+  // Use real aggregate data from platform summary when available
+  const totalLiquidity = platform?.totalLiquidity ?? 0;
+  const totalDebt = platform?.totalDebt ?? 0;
+  const totalCollateral = platform?.totalCollateralValue ?? 0;
+  const sysRisk = platform
+    ? systemRiskLabel(platform.systemRisk)
+    : riskFromHF(platform?.worstHealthFactor ?? null);
+  const oracleSource = platform?.oracle?.source === "stork" ? "Stork (Live)" : platform?.oracle?.source === "sim" ? "Simulated" : "Stork (Live)";
 
   return (
     <div style={styles.wrap}>
       <div style={styles.headerRow}>
         <h2 style={styles.headerTitle}>{titleText}</h2>
+        <span style={styles.scaleBadge}>1:1,000,000 Institutional Scale</span>
       </div>
 
       <div style={styles.grid}>
         <MetricCard
-          title="Total Platform Liquidity Pool (USDC)"
-          value={formatUSDC(liquidityPoolUSDC)}
+          title="Total Platform Liquidity (USDC)"
+          value={fmtUSDC(totalLiquidity)}
         />
         <MetricCard
           title="Total Outstanding Credit"
-          value={formatUSDC(outstandingCreditUSDC)}
+          value={fmtUSDC(totalDebt)}
         />
         <MetricCard
           title="Aggregate Collateral Value"
-          value={formatUSD(aggregateCollateralUSD)}
+          value={fmtUSD(totalCollateral)}
         />
         <MetricCard
           title="System Risk Status"
-          value={risk.label}
-          tone={risk.tone}
+          value={sysRisk.label}
+          tone={sysRisk.tone}
           rightDot
         />
       </div>
@@ -101,10 +85,29 @@ export default function PlatformOverview({ status, title }: Props) {
           <span style={styles.subLabel}>Oracle Source:</span> <span>{oracleSource}</span>
         </div>
 
+        {platform?.oracle && (
+          <div style={styles.subItem}>
+            <span style={styles.subLabel}>Oracle Price:</span>{" "}
+            <span>${platform.oracle.price.toFixed(4)}</span>
+            {platform.oracle.changePct !== 0 && (
+              <span style={{ color: platform.oracle.changePct >= 0 ? "#10b981" : "#ef4444", marginLeft: 4, fontSize: 11 }}>
+                {platform.oracle.changePct >= 0 ? "+" : ""}{platform.oracle.changePct.toFixed(2)}%
+              </span>
+            )}
+          </div>
+        )}
+
         <div style={styles.subItem}>
-          <span style={styles.subLabel}>Next Evaluation Cycle:</span>{" "}
-          <span>{nextEvalSeconds == null ? "—" : `${nextEvalSeconds}s`}</span>
+          <span style={styles.subLabel}>Next Evaluation:</span>{" "}
+          <span>{nextEvalSeconds == null ? "\u2014" : `${nextEvalSeconds}s`}</span>
         </div>
+
+        {platform && (
+          <div style={styles.subItem}>
+            <span style={styles.subLabel}>Companies:</span>{" "}
+            <span>{platform.companies.length} active</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -226,6 +229,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   subItem: { display: "flex", gap: 6, alignItems: "center" },
   subLabel: { color: "rgba(226, 232, 240, 0.55)" },
+
+  scaleBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    textTransform: "uppercase" as const,
+    padding: "3px 8px",
+    borderRadius: 6,
+    backgroundColor: "rgba(99,102,241,0.12)",
+    border: "1px solid rgba(99,102,241,0.25)",
+    color: "rgba(129,140,248,0.9)",
+  },
 
   good: { color: "rgba(16,185,129,0.95)" },
   warn: { color: "rgba(245,158,11,0.95)" },

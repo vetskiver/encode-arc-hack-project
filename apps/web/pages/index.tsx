@@ -1,42 +1,34 @@
 import React, { useEffect, useState, useCallback } from "react";
 import HeaderStatusBar from "../components/HeaderStatusBar";
-import { getStatus, getLogs } from "../lib/api";
-import { StatusResponse, ActionLog } from "../lib/types";
+import { getStatus, getLogs, getPlatformSummary, triggerMarketShock, resetCompanies } from "../lib/api";
+import { StatusResponse, ActionLog, PlatformSummary } from "../lib/types";
 import CompanyCard from "../components/CompanyCard";
 import PlatformOverview from "../components/PlatformOverview"
 import PlatformActivityFeed from "../components/PlatformActivityFeed";
 import SidebarNav from "../components/Sidebar";
 
 const POLL_INTERVAL = 3000;
-const HIDE_YIELD = (process.env.NEXT_PUBLIC_HIDE_YIELD || "").toLowerCase() === "true";
 
-const DEFAULT_USER = "0x0000000000000000000000000000000000000001";
 const SIDEBAR_W = 240;
 const SIDEBAR_W_COLLAPSED = 72;
 const SIDEBAR_MARGIN = 16;
-const OFFSET_EXPANDED = SIDEBAR_W + SIDEBAR_MARGIN * 2;
-const OFFSET_COLLAPSED = SIDEBAR_W_COLLAPSED + SIDEBAR_MARGIN
-
-const COMPANIES = [
-  { name: "Atlas Manufacturing", address: "0x0000000000000000000000000000000000000001" },
-  { name: "Northwind Logistics", address: "0x0000000000000000000000000000000000000002" },
-  { name: "Harbor Health Systems", address: "0x0000000000000000000000000000000000000003" },
-];
 
 export default function Home() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [platform, setPlatform] = useState<PlatformSummary | null>(null);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [error, setError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [shockLoading, setShockLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const leftPad = sidebarCollapsed ? 74 : 270;
 
   const refresh = useCallback(async () => {
     try {
-      // Current API appears to return one shared status/log stream.
-      // If/when it becomes per-company, store a map keyed by address.
-      const [s, l] = await Promise.all([getStatus(), getLogs()]);
+      const [s, l, p] = await Promise.all([getStatus(), getLogs(), getPlatformSummary()]);
       setStatus(s);
       setLogs(l);
+      setPlatform(p);
       setError("");
     } catch (err: any) {
       setError(err?.message || String(err));
@@ -49,19 +41,46 @@ export default function Home() {
     return () => clearInterval(id);
   }, [refresh]);
 
+  const handleShock = async (pct: number) => {
+    setShockLoading(true);
+    try {
+      await triggerMarketShock(pct);
+      await refresh();
+    } catch (e) {
+      console.error("Shock failed", e);
+    } finally {
+      setShockLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!confirm("Reset all company state to defaults?")) return;
+    setResetLoading(true);
+    try {
+      await resetCompanies();
+      await refresh();
+    } catch (e) {
+      console.error("Reset failed", e);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const companies = platform?.companies ?? [];
+
   return (
   <div style={{ ...styles.page, paddingLeft: leftPad }}>
-    
+
     <SidebarNav collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
     <main
       style={{
         transition: "margin-left 180ms ease",
       }}
     />
-    
-    
-    <HeaderStatusBar status={status} />
-    <PlatformOverview status={status} />
+
+
+    <HeaderStatusBar status={status} platform={platform} />
+    <PlatformOverview status={status} platform={platform} />
 
     {error && <div style={styles.error}>Backend unreachable: {error}</div>}
 
@@ -72,26 +91,78 @@ export default function Home() {
       <div style={styles.companies}>
         <div style={styles.companySectionHeader}>
           <h2 style={styles.companyTitle}>Companies</h2>
-          <div style={styles.companyHint}>Use Navigation Bar to select a company</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={styles.companyHint}>Use Navigation Bar to select a company</div>
+            <button
+              style={{ ...styles.shockBtn, opacity: shockLoading ? 0.6 : 1 }}
+              disabled={shockLoading}
+              onClick={() => handleShock(-15)}
+            >
+              {shockLoading ? "…" : "−15% Crash"}
+            </button>
+            <button
+              style={{ ...styles.shockBtn, ...styles.shockBtnUp, opacity: shockLoading ? 0.6 : 1 }}
+              disabled={shockLoading}
+              onClick={() => handleShock(15)}
+            >
+              {shockLoading ? "…" : "+15% Rally"}
+            </button>
+            <button
+              style={{ ...styles.shockBtn, ...styles.shockBtnReset, opacity: resetLoading ? 0.6 : 1 }}
+              disabled={resetLoading}
+              onClick={handleReset}
+            >
+              {resetLoading ? "…" : "Reset Demo"}
+            </button>
+          </div>
         </div>
 
         <div style={styles.companyGrid}>
-          {COMPANIES.map((c) => (
+          {companies.length > 0 ? companies.map((c) => (
             <CompanyCard
-              key={c.address}
+              key={c.id}
+              companyId={c.id}
               name={c.name}
-              address={c.address}
-              status={status}
+              riskProfile={c.riskProfile}
+              collateralValue={c.collateralValue}
+              debt={c.debt}
+              healthFactor={c.healthFactor}
+              liquidity={c.liquidity}
+              reserve={c.reserve}
+              agentStatus={c.status}
+              lastReason={c.lastReason}
               error={!!error}
             />
-          ))}
+          )) : (
+            // fallback while platform data loads
+            [
+              { id: "atlas", name: "Atlas Manufacturing" },
+              { id: "northwind", name: "Northwind Logistics" },
+              { id: "harbor", name: "Harbor Health Systems" },
+            ].map((c) => (
+              <CompanyCard
+                key={c.id}
+                companyId={c.id}
+                name={c.name}
+                riskProfile="balanced"
+                collateralValue={0}
+                debt={0}
+                healthFactor={999}
+                liquidity={0}
+                reserve={0}
+                agentStatus="Offline"
+                lastReason=""
+                error={!!error}
+              />
+            ))
+          )}
         </div>
       </div>
-      
+
 
       <PlatformActivityFeed logs={logs} />
 
-      
+
     </div>
   </div>
 );
@@ -134,6 +205,27 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 16,
+  },
+
+  shockBtn: {
+    padding: "5px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(239,68,68,0.4)",
+    background: "rgba(239,68,68,0.1)",
+    color: "#f87171",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  shockBtnUp: {
+    border: "1px solid rgba(16,185,129,0.4)",
+    background: "rgba(16,185,129,0.1)",
+    color: "#34d399",
+  },
+  shockBtnReset: {
+    border: "1px solid rgba(148,163,184,0.25)",
+    background: "rgba(148,163,184,0.06)",
+    color: "var(--muted)",
   },
 
   error: {

@@ -1,4 +1,4 @@
-import { StatusResponse } from "./types";
+import { StatusResponse, PlatformSummary } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
@@ -13,6 +13,39 @@ async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T> {
   }
   return res.json();
 }
+
+// --- Per-company endpoints ---
+
+export async function getCompanyStatus(companyId: string): Promise<StatusResponse> {
+  const res = await fetch(`${BASE}/api/company/${companyId}/status`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function getCompanyLogs(companyId: string) {
+  return fetchJSON<any[]>(`/api/company/${companyId}/logs`);
+}
+
+export async function triggerCompanyTick(companyId: string) {
+  return fetchJSON<any>(`/api/company/${companyId}/tick`, { method: "POST" });
+}
+
+// --- Platform aggregate ---
+
+export async function getPlatformSummary(): Promise<PlatformSummary> {
+  return fetchJSON<PlatformSummary>("/api/platform/summary");
+}
+
+// --- Market shock (demo) ---
+
+export async function triggerMarketShock(pct: number) {
+  return fetchJSON<any>("/api/demo/shock", {
+    method: "POST",
+    body: JSON.stringify({ pct }),
+  });
+}
+
+// --- Original endpoints (backwards compat) ---
 
 export async function getStatus(user?: string): Promise<StatusResponse> {
   const url = user
@@ -97,7 +130,6 @@ export function resetUser(user: string) {
   });
 }
 
-// V2: Policy endpoints
 export function getPolicy() {
   return fetchJSON<any>("/api/policy");
 }
@@ -112,4 +144,8 @@ export function updatePolicy(params: {
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+export function resetCompanies() {
+  return fetchJSON<any>("/api/companies/reset", { method: "POST" });
 }

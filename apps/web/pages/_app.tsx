@@ -6,35 +6,35 @@ export default function App({ Component, pageProps }: AppProps) {
     <>
       <Head>
         <style>{`
-          @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@300;400;600;700&display=swap");
+          @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap");
           * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
           }
           :root {
-            --font-sans: "Sora", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+            --font-sans: "Inter", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
             --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
-            --bg: #0b0f14;
-            --bg-2: #0b1c26;
-            --card: rgba(15, 23, 42, 0.78);
-            --surface: rgba(30, 41, 59, 0.6);
-            --border: rgba(148, 163, 184, 0.18);
-            --text: #e2e8f0;
-            --muted: #94a3b8;
-            --muted-strong: #cbd5e1;
-            --accent: #22d3ee;
-            --accent-2: #f59e0b;
-            --success: #22c55e;
-            --warning: #f59e0b;
-            --danger: #f43f5e;
-            --shadow: 0 14px 36px rgba(2, 6, 23, 0.35);
+            --bg: #09090B;
+            --bg-2: #0f1217;
+            --card: rgba(20, 22, 26, 0.9);
+            --surface: rgba(30, 34, 40, 0.65);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #FFFFFF;
+            --muted: #d0d0d5;
+            --muted-strong: #f1f1f3;
+            --accent: #00E5A0;      /* mint */
+            --accent-2: #00E5A0;
+            --success: #16A34A;     /* traffic green */
+            --warning: #F59E0B;     /* traffic amber */
+            --danger: #EF4444;      /* traffic red */
+            --shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
           }
           html,
           body {
-            background: radial-gradient(1200px 600px at 10% -10%, #16344a 0%, transparent 60%),
-              radial-gradient(900px 500px at 110% 0%, #13314a 0%, transparent 55%),
-              linear-gradient(160deg, var(--bg-2) 0%, var(--bg) 60%);
+            background: radial-gradient(900px 520px at 20% -10%, rgba(0, 229, 160, 0.12) 0%, transparent 55%),
+              radial-gradient(700px 480px at 110% 10%, rgba(0, 229, 160, 0.08) 0%, transparent 55%),
+              linear-gradient(165deg, var(--bg-2) 0%, var(--bg) 65%);
             color: var(--text);
             font-family: var(--font-sans);
             min-height: 100%;
@@ -43,8 +43,8 @@ export default function App({ Component, pageProps }: AppProps) {
             content: "";
             position: fixed;
             inset: -20%;
-            background: radial-gradient(600px 400px at 70% 20%, rgba(34, 211, 238, 0.12), transparent 60%),
-              radial-gradient(500px 360px at 20% 80%, rgba(245, 158, 11, 0.12), transparent 60%);
+            background: radial-gradient(520px 360px at 70% 18%, rgba(0, 229, 160, 0.1), transparent 60%),
+              radial-gradient(460px 320px at 18% 78%, rgba(255, 255, 255, 0.06), transparent 60%);
             pointer-events: none;
             z-index: 0;
           }
